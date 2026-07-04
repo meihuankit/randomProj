@@ -65,6 +65,11 @@
     z-index: 6; display: none; border: 1px solid rgba(255,255,255,.15); cursor: pointer;
     background: rgba(8, 14, 34, .5); color: #fff; font-size: 1.1rem; padding: 8px 12px; border-radius: 999px;
   }
+  #restBtn {
+    position: fixed; left: calc(14px + env(safe-area-inset-left)); top: calc(64px + env(safe-area-inset-top));
+    z-index: 6; display: none; border: 1px solid rgba(255,255,255,.15); cursor: pointer;
+    background: rgba(8, 14, 34, .5); color: #fff; font-size: 1.1rem; padding: 8px 12px; border-radius: 999px;
+  }
   #buddies { position: fixed; inset: 0; z-index: 5; pointer-events: none; }
   #buddies .buddy {
     position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 6px;
@@ -98,9 +103,18 @@
   }
   #boostBtn.on { background: rgba(255,209,102,.8); }
   @media (pointer: coarse) {
-    #hint { left: 50%; bottom: auto; top: calc(14px + env(safe-area-inset-top)); transform: translateX(-50%); text-align: center; }
-    #scenes { right: auto; left: calc(14px + env(safe-area-inset-left)); justify-content: flex-start; max-width: 55vw; }
-    #scenes button { padding: 9px 12px; font-size: 1rem; }
+    #hint { left: 50%; bottom: auto; top: calc(14px + env(safe-area-inset-top)); transform: translateX(-50%);
+      text-align: center; font-size: .74rem; background: rgba(8, 14, 34, .3); padding: 6px 12px; }
+    #scenes { display: none; }
+    #stats { font-size: .72rem; padding: 4px 10px; background: rgba(8, 14, 34, .3); line-height: 1.45; }
+    #soundBtn, #restBtn { background: rgba(8, 14, 34, .32); border-color: rgba(255,255,255,.12);
+      font-size: 1rem; padding: 7px 10px; }
+    #boostBtn { width: 64px; height: 64px; font-size: 1.5rem;
+      background: rgba(8, 14, 34, .3); border-color: rgba(255,255,255,.16); }
+    #joy { border-color: rgba(255,255,255,.16); background: rgba(255,255,255,.03); }
+    #joyKnob { background: rgba(255,255,255,.22); }
+    #buddies .buddy { font-size: .72rem; background: rgba(8,14,34,.4); }
+    #toast { font-size: 1.1rem; }
   }
 </style>
 <script async src="https://unpkg.com/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
@@ -146,6 +160,7 @@ addEventListener('error', () => {
 <div id="stats"></div>
 <div id="scenes"></div>
 <button id="soundBtn" title="Sound on/off">🔊</button>
+<button id="restBtn" title="Rest & watch">🧘</button>
 <div id="joy"><div id="joyKnob"></div></div>
 <div id="boostBtn">🚀</div>
 <div id="toast"></div>
@@ -1060,20 +1075,26 @@ function buildFlyer(accent) {
   const aura = new THREE.Sprite(auraMat);
   aura.scale.set(8, 8, 1);
   model.add(aura);
-  return { rig, model, bodyMat: accentMat, armL, armR, legL, legR, hem, fringe, headG, aura };
+  return { rig, model, pose, bodyMat: accentMat, armL, armR, legL, legR, hem, fringe, headG, aura };
 }
 // living pose — arms ride the wind, cloth and hair flutter, dives sweep the
 // arms back, climbs open them wide, boost tucks everything in
-function flyerPose(f, t, phase, boostK, pitch) {
-  const flare = 0.55 - boostK * 0.38 + pitch * 0.35;
-  f.armL.rotation.z = -flare + Math.sin(t * 1.4 + phase) * 0.07;
-  f.armR.rotation.z = flare - Math.sin(t * 1.4 + phase + 0.9) * 0.07;
-  f.armL.rotation.x = f.armR.rotation.x = -0.3 + boostK * 0.15 - pitch * 0.4;
-  f.legL.rotation.x = -0.08 + Math.sin(t * 1.15 + phase) * 0.09;
-  f.legR.rotation.x = -0.08 + Math.sin(t * 1.15 + phase + Math.PI) * 0.09;
-  f.hem.rotation.x = Math.sin(t * (5.4 + boostK * 3) + phase) * (0.05 + boostK * 0.05);
+function flyerPose(f, t, phase, boostK, pitch, restK) {
+  restK = restK || 0;
+  const fly = 1 - restK;
+  const flare = (0.55 - boostK * 0.38 + pitch * 0.35) * fly + 0.16 * restK;
+  const sway = 0.07 * fly + 0.05 * restK;
+  f.armL.rotation.z = -flare + Math.sin(t * 1.4 + phase) * sway;
+  f.armR.rotation.z = flare - Math.sin(t * 1.4 + phase + 0.9) * sway;
+  f.armL.rotation.x = f.armR.rotation.x = (-0.3 + boostK * 0.15 - pitch * 0.4) * fly + 0.08 * restK;
+  const kick = 0.09 * fly + 0.035 * restK;
+  f.legL.rotation.x = -0.08 * fly + Math.sin(t * 1.15 + phase) * kick;
+  f.legR.rotation.x = -0.08 * fly + Math.sin(t * 1.15 + phase + Math.PI) * kick;
+  f.hem.rotation.x = Math.sin(t * (5.4 + boostK * 3) + phase) * (0.05 + boostK * 0.05) * (1 - restK * 0.6);
   f.fringe.rotation.x = 0.35 + Math.sin(t * (4.6 + boostK * 3) + phase * 2) * (0.07 + boostK * 0.07);
-  f.headG.rotation.x = 0.8 + pitch * 0.3 + Math.sin(t * 0.7 + phase) * 0.04;
+  f.headG.rotation.x = (0.8 + pitch * 0.3) * fly + 0.08 * restK + Math.sin(t * 0.7 + phase) * 0.04;
+  // prone glide <-> upright float
+  f.pose.rotation.x = -Math.PI / 2 * fly;
 }
 const PLANE_COLS = [0xe8654f, 0x4fa3e8, 0x7ac97a, 0xf2c14e, 0xc79bf2, 0xff8fa3, 0x6fd9c8, 0xffa94d];
 const me = buildFlyer(PLANE_COLS[0]);
@@ -1146,8 +1167,21 @@ let boostAmt = 0;
 // barrel roll — pure joy, zero stakes (Space / double-tap the look side)
 let rollAnim = 0, rollFx = 0;
 function triggerRoll() {
-  if (flying && rollAnim === 0) rollAnim = 1e-6;
+  if (flying && rollAnim === 0 && !resting) rollAnim = 1e-6;
 }
+
+// rest mode — stop mid-air, float upright, and just watch the night go by
+let resting = false, restAmt = 0;
+const restBtn = document.getElementById('restBtn');
+function setRest(v) {
+  if (resting === v || !flying) return;
+  resting = v;
+  restBtn.textContent = v ? '🕊️' : '🧘';
+  restBtn.title = v ? 'Fly again' : 'Rest & watch';
+  showToast(v ? 'Just floating… breathe 🧘' : 'Back to the wind 🕊️');
+  if (!v) camDrag.yaw = ((camDrag.yaw + Math.PI) % 6.2832 + 6.2832) % 6.2832 - Math.PI;
+}
+restBtn.onclick = () => setRest(!resting);
 
 // free-look camera — flying steers the body, this swings your eyes around it
 const camDrag = { yaw: 0, pitch: 0, mouse: false, lx: 0, ly: 0 };
@@ -1174,6 +1208,7 @@ addEventListener('keydown', e => {
   }
   if (e.code === 'KeyM') toggleSound();
   if (e.code === 'Space') triggerRoll();
+  if (e.code === 'KeyR') setRest(!resting);
 });
 addEventListener('keyup', e => keys[e.code] = false);
 
@@ -1441,8 +1476,8 @@ const joinInput = document.getElementById('joinCode');
 let flying = false;
 
 hint.innerHTML = isTouch
-  ? 'Left thumb — fly · right thumb — look · double-tap right — roll · hold 🚀 boost'
-  : '← → steer &nbsp;·&nbsp; ↑ ↓ climb / dive &nbsp;·&nbsp; Shift — glide faster &nbsp;·&nbsp; Space — barrel roll<br>drag mouse — look around &nbsp;·&nbsp; M — sound on/off';
+  ? 'Left thumb — fly · right thumb — look · 2×tap right — roll · 🧘 rest'
+  : '← → steer &nbsp;·&nbsp; ↑ ↓ climb / dive &nbsp;·&nbsp; Shift — glide faster &nbsp;·&nbsp; Space — barrel roll<br>drag mouse — look around &nbsp;·&nbsp; R — rest &amp; watch &nbsp;·&nbsp; M — sound on/off';
 
 nameInput.value = localStorage.getItem('skydrift-name') || '';
 
@@ -1490,6 +1525,7 @@ function startFlight() {
   flying = true;
   initAudio();
   soundBtn.style.display = 'block';
+  restBtn.style.display = 'block';
   if (isTouch) {
     boostBtn.style.display = 'flex';
     if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
@@ -1765,6 +1801,7 @@ function applyRemoteState(id, d) {
   p.target.pos.set(d.p[0], d.p[1], d.p[2]);
   p.target.yaw = d.yw; p.target.pitch = d.pt; p.target.roll = d.rl;
   p.wishes = d.w || 0;
+  p.rest = d.r || 0;
 }
 
 function netSendScene(i) {
@@ -1776,7 +1813,7 @@ function netSendScene(i) {
 function netPublishState() {
   if (!client || !joined) return;
   client.publish(roomTopic() + '/p/' + myId, JSON.stringify({
-    n: myName(), w: wishes,
+    n: myName(), w: wishes, r: resting ? 1 : 0,
     p: [+state.pos.x.toFixed(2), +state.pos.y.toFixed(2), +state.pos.z.toFixed(2)],
     yw: +state.yaw.toFixed(3), pt: +state.pitch.toFixed(3), rl: +(state.roll + rollFx).toFixed(3)
   }));
@@ -1955,6 +1992,8 @@ if (urlRoom) {
 // ---------------- Flight + world update ----------------
 const FWD = new THREE.Vector3();
 const camTarget = new THREE.Vector3();
+// phones sit closer to the eye — pull the camera back so the world breathes
+const CAM_BACK = isTouch ? new THREE.Vector3(0, 4.4, 14) : new THREE.Vector3(0, 3.4, 10.5);
 const moonDirTmp = new THREE.Vector3(), cloudDirTmp = new THREE.Vector3();
 const silverCol = new THREE.Color(0xdfe9ff);
 
@@ -1969,17 +2008,23 @@ function updateFlight(dt, t) {
   climb = Math.max(-1, Math.min(1, climb));
   const boost = keys['ShiftLeft'] || keys['ShiftRight'] || touchInput.boost;
 
+  // any firm input wakes you from resting
+  if (resting && (Math.abs(steer) > 0.35 || Math.abs(climb) > 0.35 || boost)) setRest(false);
+  restAmt += ((resting ? 1 : 0) - restAmt) * Math.min(1, dt * 2.2);
+  const move = 1 - restAmt;
+
   // responsive: the body answers in a fraction of a second, and the heading
   // turns hard enough to actually go where you point (wider arcs while boosting)
-  const targetRoll = steer * 0.62;
-  const targetPitch = climb * 0.5;
+  const targetRoll = steer * 0.62 * move;
+  const targetPitch = climb * 0.5 * move;
   state.roll += (targetRoll - state.roll) * Math.min(1, dt * 6);
   state.pitch += (targetPitch - state.pitch) * Math.min(1, dt * 5);
   state.yaw += state.roll * dt * (boost ? 1.4 : 1.9);
 
-  const speed = boost ? 55 : 26;
+  const speed = (boost ? 55 : 26) * move;
   FWD.set(0, 0, -1).applyEuler(new THREE.Euler(state.pitch, state.yaw, 0, 'YXZ'));
   state.pos.addScaledVector(FWD, speed * dt);
+  state.pos.y += Math.sin(t * 0.8) * dt * 0.9 * restAmt;   // hover bob while resting
 
   // gentle altitude limits — the sky is a comfy place, hills included
   const floorY = Math.max(10, terrainH(state.pos.x, state.pos.z) + 8);
@@ -1997,18 +2042,24 @@ function updateFlight(dt, t) {
   }
   model.position.y = Math.sin(t * 1.6) * 0.25;
   boostAmt += ((boost ? 1 : 0) - boostAmt) * Math.min(1, dt * 4);
-  flyerPose(me, t, 0, boostAmt, state.pitch);
+  flyerPose(me, t, 0, boostAmt, state.pitch, restAmt);
 
   // chase camera + free look: drag offsets orbit around the wanderer,
   // then ease back behind the shoulders once released
   const looking = camDrag.mouse || lookId !== null;
   if (!looking) {
-    const ease = 1 - Math.exp(-dt * 2.2);
-    camDrag.yaw -= camDrag.yaw * ease;
-    camDrag.pitch -= camDrag.pitch * ease;
+    if (restAmt > 0.5) {
+      camDrag.yaw += dt * 0.07;               // the world slowly turns around you
+      camDrag.pitch += (0.06 - camDrag.pitch) * Math.min(1, dt);
+    } else {
+      const ease = 1 - Math.exp(-dt * 2.2);
+      camDrag.yaw -= camDrag.yaw * ease;
+      camDrag.pitch -= camDrag.pitch * ease;
+    }
   }
-  const back = new THREE.Vector3(0, 3.4, 10.5)
-    .applyEuler(new THREE.Euler(state.pitch * 0.5 + camDrag.pitch, state.yaw + camDrag.yaw, 0, 'YXZ'));
+  const back = new THREE.Vector3(CAM_BACK.x, CAM_BACK.y, CAM_BACK.z)
+    .multiplyScalar(1 + restAmt * 0.5)
+    .applyEuler(new THREE.Euler(state.pitch * 0.5 * move + camDrag.pitch, state.yaw + camDrag.yaw, 0, 'YXZ'));
   camTarget.copy(state.pos).add(back);
   camera.position.lerp(camTarget, 1 - Math.exp(-dt * (looking ? 9 : 4.6)));
   const orbit = Math.min(1, (Math.abs(camDrag.yaw) + Math.abs(camDrag.pitch)) * 2.5);
@@ -2127,7 +2178,8 @@ renderer.setAnimationLoop(() => {
     r.rotation.y += (p.target.yaw - r.rotation.y) * k;
     r.rotation.z += (p.target.roll - r.rotation.z) * k;
     p.plane.model.position.y = Math.sin(t * 1.6 + p.phase) * 0.25;
-    flyerPose(p.plane, t, p.phase, 0, p.target.pitch);
+    p.restK = (p.restK || 0) + ((p.rest || 0) - (p.restK || 0)) * Math.min(1, dt * 2.2);
+    flyerPose(p.plane, t, p.phase, 0, p.target.pitch, p.restK);
     p.plane.aura.scale.setScalar(8 + Math.min(p.wishes || 0, 30) * 0.3);
     p.plane.aura.material.opacity = 0.3 + Math.min(p.wishes || 0, 20) * 0.02;
     updateBuddyTag(p, r);
