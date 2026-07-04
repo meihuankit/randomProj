@@ -95,6 +95,7 @@
     #scenes button { padding: 9px 12px; font-size: 1rem; }
   }
 </style>
+<script async src="https://unpkg.com/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
 <script type="importmap">
 {
   "imports": {
@@ -103,7 +104,14 @@
   }
 }
 </script>
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://unpkg.com/mqtt@5.10.4/dist/mqtt.min.js"></script>
+<script>
+// if the game script or a CDN dependency fails to load, say so instead of dead buttons
+addEventListener('error', () => {
+  const s = document.getElementById('mpStatus');
+  if (s && !s.textContent) s.textContent = '⚠️ Something failed to load — check your connection and refresh.';
+}, true);
+</script>
 </head>
 <body>
 <div id="overlay">
@@ -1011,16 +1019,23 @@ function startFlight() {
   setTimeout(() => hint.style.opacity = 0.25, 12000);
 }
 
-// ---------------- Multiplayer — shared sky over a link (P2P star, host relays) ----------------
-// Host creates room `sky-drift-room-XXXX` and shares ?room=XXXX link. Every joiner
-// connects to the host; the host relays states so all planes see each other.
+// ---------------- Multiplayer — shared sky over a link (MQTT relay over WSS) ----------------
+// Everyone in a room publishes tiny state packets to a public MQTT broker over
+// secure WebSockets and subscribes to the whole room. Plain WSS gets through
+// phone networks and CGNAT where WebRTC (no TURN) never connects.
 const MAX_PLAYERS = 8;
-let peer = null, isHost = false, hostConn = null, roomCode = null, netTimer = 0;
-const conns = new Map();     // host only: playerId -> DataConnection
-const players = new Map();   // playerId -> { plane, target, name, phase, trailL, trailR }
-let nextId = 1;
+const BROKERS = [
+  'wss://broker.emqx.io:8084/mqtt',
+  'wss://broker.hivemq.com:8884/mqtt',
+  'wss://test.mosquitto.org:8081'
+];
+let client = null, roomCode = null, joined = false, netTimer = 0, spawnNearOthers = false;
+const myId = Math.random().toString(36).slice(2, 10);
+const players = new Map();   // playerId -> { plane, target, name, phase, lastSeen, trailL, trailR }
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const codeToId = c => 'sky-drift-room-' + c.toLowerCase();
+const roomTopic = () => 'skydrift-mk1/' + roomCode;
+const hashId = id => [...String(id)].reduce((a, ch) => a * 31 + ch.charCodeAt(0) >>> 0, 7);
+const colorOf = id => PLANE_COLS[hashId(id) % PLANE_COLS.length];
 
 function makeLabel(text) {
   const c = document.createElement('canvas'); c.width = 256; c.height = 64;
@@ -1038,13 +1053,13 @@ function makeLabel(text) {
 }
 
 function addPlayer(id, name) {
-  if (players.has(id)) return;
-  const plane = buildPlane(PLANE_COLS[id % PLANE_COLS.length]);
+  if (players.has(id) || players.size >= MAX_PLAYERS - 1) return;
+  const plane = buildPlane(colorOf(id));
   plane.rig.add(makeLabel(name || 'pilot'));
   scene.add(plane.rig);
   const p = {
-    plane, name: name || 'pilot', phase: (id * 1.7) % 6.28, lastSeen: performance.now(),
-    target: { pos: state.pos.clone().add(new THREE.Vector3(10 + id * 6, 0, 0)), yaw: state.yaw, pitch: 0, roll: 0 },
+    plane, name: name || 'pilot', phase: (hashId(id) % 628) / 100, lastSeen: performance.now(),
+    target: { pos: state.pos.clone().add(new THREE.Vector3(12, 0, 0)), yaw: state.yaw, pitch: 0, roll: 0 },
     trailL: makeTrail(0xd9ecff, 44), trailR: makeTrail(0xd9ecff, 44)
   };
   plane.rig.position.copy(p.target.pos);
@@ -1057,7 +1072,6 @@ function removePlayer(id) {
   scene.remove(p.trailL.mesh); scene.remove(p.trailR.mesh);
   players.delete(id);
 }
-function removeAllPlayers() { for (const id of [...players.keys()]) removePlayer(id); }
 
 function applyRemoteState(id, d) {
   const p = players.get(id);
@@ -1067,12 +1081,54 @@ function applyRemoteState(id, d) {
   p.target.yaw = d.yw; p.target.pitch = d.pt; p.target.roll = d.rl;
 }
 
-function broadcast(msg, exceptId) {
-  for (const [id, c] of conns) if (id !== exceptId && c.open) c.send(msg);
-}
 function netSendScene(i) {
-  if (isHost) broadcast({ t: 'scene', i });
-  else if (hostConn && hostConn.open) hostConn.send({ t: 'scene', i });
+  if (client && joined) {
+    // retained, so pilots who join later land in the same sky
+    client.publish(roomTopic() + '/scene', JSON.stringify({ i, by: myId }), { retain: true });
+  }
+}
+function netPublishState() {
+  if (!client || !joined) return;
+  client.publish(roomTopic() + '/p/' + myId, JSON.stringify({
+    n: myName(),
+    p: [+state.pos.x.toFixed(2), +state.pos.y.toFixed(2), +state.pos.z.toFixed(2)],
+    yw: +state.yaw.toFixed(3), pt: +state.pitch.toFixed(3), rl: +state.roll.toFixed(3)
+  }));
+}
+
+function onNetMessage(topic, payload) {
+  let d;
+  try { d = JSON.parse(payload.toString()); } catch (e) { return; }
+  const sub = topic.slice(roomTopic().length + 1);
+  if (sub === 'scene') {
+    if (d.by !== myId && SCENES[d.i]) setScene(d.i, true);
+    return;
+  }
+  if (!sub.startsWith('p/')) return;
+  const id = sub.slice(2);
+  if (id === myId) return;
+  if (d.bye) {
+    const p = players.get(id);
+    if (p) { showToast(`${p.name} flew away 👋`); removePlayer(id); }
+    return;
+  }
+  if (!Array.isArray(d.p)) return;
+  const isNew = !players.has(id);
+  if (isNew) {
+    addPlayer(id, d.n);
+    if (!players.has(id)) return;   // room already full
+    showToast(`${d.n || 'A pilot'} joined ✈️`);
+  }
+  applyRemoteState(id, d);
+  if (isNew) {
+    const p = players.get(id);
+    p.plane.rig.position.copy(p.target.pos);
+    if (spawnNearOthers) {
+      // joined an in-progress flight — appear beside the flock, not at the origin
+      spawnNearOthers = false;
+      state.pos.set(d.p[0] + 10 + Math.random() * 14, Math.max(30, d.p[1]), d.p[2] + (Math.random() - .5) * 16);
+    }
+  }
 }
 
 function roomLink() {
@@ -1103,163 +1159,80 @@ function showHostLink() {
   mpStatus.append(line, linkEl, btns);
 }
 
-function hostFlight() {
-  if (peer) return;
-  roomCode = Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
-  mpStatus.textContent = 'Setting up your sky…';
-  isHost = true;
-  peer = new Peer(codeToId(roomCode));
-  peer.on('open', () => {
-    showHostLink();
-    document.getElementById('soloBtn').textContent = `Take off ✈️ (room ${roomCode})`;
+function connectRoom(code, asHost, attempt = 0) {
+  if (attempt >= BROKERS.length) {
+    mpStatus.textContent = 'Couldn\'t reach the sky servers — check your internet and try again.';
+    client = null; roomCode = null;
+    return;
+  }
+  roomCode = code;
+  mpStatus.textContent = attempt === 0 ? 'Connecting to the sky…'
+    : `Still connecting — trying another route (${attempt + 1}/${BROKERS.length})…`;
+  const c = mqtt.connect(BROKERS[attempt], {
+    clientId: 'skydrift_' + myId,
+    clean: true, connectTimeout: 8000, keepalive: 30, reconnectPeriod: 3000,
+    // broker tells everyone if this tab dies without saying goodbye
+    will: { topic: 'skydrift-mk1/' + code + '/p/' + myId, payload: JSON.stringify({ bye: 1 }), qos: 0, retain: false }
   });
-  peer.on('connection', c => {
-    if (conns.size >= MAX_PLAYERS - 1) {
-      c.on('open', () => { c.send({ t: 'full' }); setTimeout(() => c.close(), 200); });
-      return;
-    }
-    let cid = null;
-    c.on('data', d => {
-      if (d.t === 'hi' && cid === null) {
-        cid = nextId++;
-        conns.set(cid, c);
-        c._name = d.name;
-        const roster = [{ id: 0, name: myName() }];
-        for (const [id, p] of players) roster.push({ id, name: p.name });
-        c.send({ t: 'welcome', id: cid, scene: SCENES.indexOf(target),
-          p: [state.pos.x, state.pos.y, state.pos.z], roster });
-        addPlayer(cid, d.name);
-        broadcast({ t: 'join', id: cid, name: d.name }, cid);
-        showToast(`${d.name || 'A pilot'} joined ✈️`);
+  client = c;
+  let everConnected = false;
+  const nextBroker = () => {
+    if (everConnected || client !== c) return;
+    c.end(true);
+    client = null;
+    connectRoom(code, asHost, attempt + 1);
+  };
+  const failTimer = setTimeout(nextBroker, 9000);
+  c.on('error', nextBroker);
+  c.on('connect', () => {
+    clearTimeout(failTimer);
+    everConnected = true;
+    c.subscribe(roomTopic() + '/#', err => {
+      if (err || joined) return;
+      joined = true;
+      myBodyMat.color.setHex(colorOf(myId));
+      netPublishState();               // announce myself right away
+      if (asHost) {
+        showHostLink();
+        document.getElementById('soloBtn').textContent = `Take off ✈️ (room ${roomCode})`;
+      } else {
+        mpStatus.textContent = '';
+        showToast('✈️✈️ You joined the sky!');
         startFlight();
-      } else if (d.t === 's' && cid !== null) {
-        if (!players.has(cid)) {          // came back after a stale sweep
-          addPlayer(cid, c._name);
-          broadcast({ t: 'join', id: cid, name: c._name }, cid);
-        }
-        applyRemoteState(cid, d);
-        broadcast({ t: 's', id: cid, p: d.p, yw: d.yw, pt: d.pt, rl: d.rl }, cid);
-      } else if (d.t === 'scene') {
-        setScene(d.i, true);
-        broadcast({ t: 'scene', i: d.i }, cid);
-      } else if (d.t === 'bye') {
-        bye();
       }
     });
-    const bye = () => {
-      if (cid === null || !conns.has(cid)) return;
-      const name = players.get(cid) ? players.get(cid).name : 'a pilot';
-      conns.delete(cid);
-      removePlayer(cid);
-      broadcast({ t: 'leave', id: cid });
-      showToast(`${name} flew away 👋`);
-      cid = null;
-    };
-    c.on('close', bye);
-    c.on('error', bye);
   });
-  peer.on('disconnected', () => peer && peer.reconnect());
-  peer.on('error', err => {
-    if (err.type === 'unavailable-id') { peer.destroy(); peer = null; isHost = false; hostFlight(); }
-    else mpStatus.textContent = 'Network error: ' + err.type;
-  });
+  c.on('message', onNetMessage);
 }
 
-function onHostData(d) {
-  if (d.t === 'welcome') {
-    myBodyMat.color.setHex(PLANE_COLS[d.id % PLANE_COLS.length]);
-    setScene(d.scene, true);
-    state.pos.set(d.p[0] + 10 + Math.random() * 14, Math.max(30, d.p[1]), d.p[2] + (Math.random() - .5) * 16);
-    d.roster.forEach(r => addPlayer(r.id, r.name));
-    mpStatus.textContent = '';
-    showToast('✈️✈️ You joined the sky!');
-    startFlight();
-  } else if (d.t === 'join') {
-    addPlayer(d.id, d.name);
-    showToast(`${d.name || 'A pilot'} joined ✈️`);
-  } else if (d.t === 'leave') {
-    const p = players.get(d.id);
-    showToast(`${p ? p.name : 'A pilot'} flew away 👋`);
-    removePlayer(d.id);
-  } else if (d.t === 's') {
-    applyRemoteState(d.id, d);
-  } else if (d.t === 'scene') {
-    setScene(d.i, true);
-  } else if (d.t === 'bye-host') {
-    removeAllPlayers();
-    hostConn = null;
-    showToast('Host left — the sky is all yours 👋');
-  } else if (d.t === 'full') {
-    mpStatus.textContent = 'That sky is full (8 planes) — try again later!';
-  }
+function hostFlight() {
+  if (client) return;
+  const code = Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+  connectRoom(code, true);
 }
 
 function joinFlight(code) {
-  if (peer) return;
+  if (client) return;
   if (!code || code.length < 4) { mpStatus.textContent = 'Type the 4-letter room code first'; return; }
-  mpStatus.textContent = 'Connecting…';
-  peer = new Peer();
-  peer.on('open', () => {
-    const c = peer.connect(codeToId(code));
-    hostConn = c;
-    c.on('open', () => c.send({ t: 'hi', name: myName() }));
-    c.on('data', onHostData);
-    const gone = () => {
-      removeAllPlayers();
-      hostConn = null;
-      showToast('Host left — the sky is all yours 👋');
-    };
-    c.on('close', gone);
-    c.on('error', gone);
-  });
-  peer.on('error', err => {
-    if (err.type === 'peer-unavailable') {
-      mpStatus.textContent = 'No sky with that code — ask your friend for a fresh link.';
-      peer.destroy(); peer = null; hostConn = null;
-    } else mpStatus.textContent = 'Network error: ' + err.type;
-  });
+  spawnNearOthers = true;
+  connectRoom(code.toUpperCase(), false);
 }
 
-// tell the others right away when this tab closes (PeerJS close events are slow)
+// tell the others right away when this tab closes (the broker's will covers crashes)
 addEventListener('pagehide', () => {
-  try {
-    if (isHost) broadcast({ t: 'bye-host' });
-    else if (hostConn && hostConn.open) hostConn.send({ t: 'bye' });
-  } catch (e) { /* best effort */ }
+  try { if (client && joined) client.publish(roomTopic() + '/p/' + myId, JSON.stringify({ bye: 1 })); }
+  catch (e) { /* best effort */ }
 });
 // heartbeat via setInterval — keeps running when the tab is backgrounded (rAF doesn't)
-setInterval(() => {
-  if (!(isHost ? conns.size > 0 : (hostConn && hostConn.open))) return;
-  const msg = { t: 's', p: [+state.pos.x.toFixed(2), +state.pos.y.toFixed(2), +state.pos.z.toFixed(2)],
-    yw: state.yaw, pt: state.pitch, rl: state.roll };
-  if (isHost) broadcast({ ...msg, id: 0 });
-  else hostConn.send(msg);
-}, 2000);
+setInterval(() => { if (joined) netPublishState(); }, 2000);
 // stale sweep — long fuse so throttled background tabs aren't kicked
 const STALE_MS = 70000;
 setInterval(() => {
   const now = performance.now();
-  if (isHost) {
-    for (const [id, c] of conns) {
-      const p = players.get(id);
-      if (p && now - p.lastSeen > STALE_MS) {
-        conns.delete(id);
-        removePlayer(id);
-        broadcast({ t: 'leave', id });
-        showToast(`${p.name} flew away 👋`);
-        try { c.close(); } catch (e) { /* already gone */ }
-      }
-    }
-  } else if (hostConn) {
-    const host = players.get(0);
-    if (host && now - host.lastSeen > STALE_MS) {
-      removeAllPlayers();
-      hostConn = null;
-      showToast('Host left — the sky is all yours 👋');
-    } else {
-      for (const [id, p] of players) {
-        if (id !== 0 && now - p.lastSeen > STALE_MS) removePlayer(id);
-      }
+  for (const [id, p] of players) {
+    if (now - p.lastSeen > STALE_MS) {
+      removePlayer(id);
+      showToast(`${p.name} flew away 👋`);
     }
   }
 }, 5000);
@@ -1414,13 +1387,9 @@ renderer.setAnimationLoop(() => {
 
   // ----- multiplayer sync -----
   netTimer += dt;
-  if (netTimer > 0.08 && (isHost ? conns.size > 0 : (hostConn && hostConn.open))) {
+  if (netTimer > 0.1 && joined) {
     netTimer = 0;
-    const msg = { t: 's',
-      p: [+state.pos.x.toFixed(2), +state.pos.y.toFixed(2), +state.pos.z.toFixed(2)],
-      yw: state.yaw, pt: state.pitch, rl: state.roll };
-    if (isHost) broadcast({ ...msg, id: 0 });
-    else hostConn.send(msg);
+    netPublishState();
   }
   for (const p of players.values()) {
     const k = 1 - Math.exp(-dt * 8);
@@ -1538,7 +1507,7 @@ renderer.setAnimationLoop(() => {
     statTick = 0;
     let extra = '';
     if (players.size > 0) extra = `<br>👥 ${players.size + 1} flying together`;
-    else if (isHost && roomCode) extra = `<br>🔑 room ${roomCode} — share the link!`;
+    else if (joined && roomCode) extra = `<br>🔑 room ${roomCode} — share the link!`;
     statsEl.innerHTML = `⛰️ ${Math.round(state.pos.y)} m<br>✈️ ${boosting ? 55 : 26} m/s${extra}`;
   }
 
