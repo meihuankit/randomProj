@@ -2,44 +2,57 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a1030">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>Sky Drift ✈️</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✈️</text></svg>">
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #0a1030; font-family: system-ui, sans-serif; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0a1030; font-family: system-ui, sans-serif;
+    touch-action: none; -webkit-user-select: none; user-select: none; }
+  canvas { display: block; }
   #overlay {
     position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 14px;
+    align-items: center; justify-content: center; gap: 14px; padding: 20px;
     background: rgba(6, 12, 32, .75); color: #fff; text-align: center; backdrop-filter: blur(5px);
   }
   #overlay h1 { margin: 0; font-size: 2.6rem; letter-spacing: 2px; font-weight: 800; }
-  #overlay .sub { opacity: .8; font-size: 1.05rem; max-width: 480px; line-height: 1.5; }
-  #overlay .start { margin-top: 14px; background: #ffd166; color: #1d2430; font-weight: 700;
-    padding: 12px 32px; border-radius: 999px; font-size: 1.15rem; cursor: pointer; }
+  #overlay .sub { opacity: .8; font-size: 1.02rem; max-width: 480px; line-height: 1.5; }
+  #overlay .start { margin-top: 8px; background: #ffd166; color: #1d2430; font-weight: 700;
+    padding: 13px 34px; border-radius: 999px; font-size: 1.15rem; cursor: pointer; border: none; font-family: inherit; }
   #overlay .mp { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-  #overlay .row { display: flex; gap: 10px; align-items: center; }
+  #overlay .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
   #overlay .mbtn {
     border: 1px solid rgba(255,255,255,.25); cursor: pointer; color: #fff; font-family: inherit;
-    background: rgba(255,255,255,.08); padding: 10px 20px; border-radius: 999px; font-size: .95rem;
+    background: rgba(255,255,255,.08); padding: 11px 20px; border-radius: 999px; font-size: .95rem;
   }
   #overlay .mbtn:hover { background: rgba(255,255,255,.18); }
   #overlay input {
-    width: 6ch; text-align: center; font-family: inherit; font-size: 1rem; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 2px; color: #fff; background: rgba(255,255,255,.1);
-    border: 1px solid rgba(255,255,255,.25); border-radius: 10px; padding: 9px 6px; outline: none;
+    text-align: center; font-family: inherit; font-size: 1rem; font-weight: 700;
+    letter-spacing: 1px; color: #fff; background: rgba(255,255,255,.1);
+    border: 1px solid rgba(255,255,255,.25); border-radius: 10px; padding: 10px 8px; outline: none;
   }
-  #mpStatus { min-height: 1.3em; font-size: .92rem; color: #ffd166; max-width: 460px; }
+  #nameInput { width: 15ch; }
+  #joinCode { width: 6ch; text-transform: uppercase; letter-spacing: 2px; }
+  #mpStatus { min-height: 1.3em; font-size: .92rem; color: #ffd166; max-width: 480px; line-height: 1.6; }
+  #mpStatus a { color: #ffd166; word-break: break-all; }
+  #mpStatus button { border: none; cursor: pointer; font-family: inherit; font-size: .85rem; font-weight: 700;
+    background: #ffd166; color: #1d2430; padding: 6px 14px; border-radius: 999px; margin: 2px 4px; }
   #hint {
-    position: fixed; left: 14px; bottom: 14px; z-index: 5; color: #fff; pointer-events: none;
+    position: fixed; left: calc(14px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom));
+    z-index: 5; color: #fff; pointer-events: none;
     background: rgba(8, 14, 34, .45); padding: 8px 14px; border-radius: 10px;
     font-size: .82rem; line-height: 1.6; transition: opacity 2s;
   }
   #stats {
-    position: fixed; right: 14px; top: 14px; z-index: 5; color: #fff; pointer-events: none;
+    position: fixed; right: calc(14px + env(safe-area-inset-right)); top: calc(14px + env(safe-area-inset-top));
+    z-index: 5; color: #fff; pointer-events: none;
     background: rgba(8, 14, 34, .45); padding: 6px 12px; border-radius: 10px;
     font-size: .8rem; text-align: right; line-height: 1.5;
   }
   #scenes {
-    position: fixed; right: 14px; bottom: 14px; z-index: 6; display: flex; gap: 8px;
+    position: fixed; right: calc(14px + env(safe-area-inset-right)); bottom: calc(14px + env(safe-area-inset-bottom));
+    z-index: 6; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; max-width: 70vw;
   }
   #scenes button {
     border: none; cursor: pointer; color: #fff; font-size: .85rem; font-family: inherit;
@@ -47,10 +60,39 @@
     border: 1px solid rgba(255,255,255,.15); transition: background .3s;
   }
   #scenes button.active { background: rgba(255, 209, 102, .85); color: #1d2430; font-weight: 700; }
+  #soundBtn {
+    position: fixed; left: calc(14px + env(safe-area-inset-left)); top: calc(14px + env(safe-area-inset-top));
+    z-index: 6; display: none; border: 1px solid rgba(255,255,255,.15); cursor: pointer;
+    background: rgba(8, 14, 34, .5); color: #fff; font-size: 1.1rem; padding: 8px 12px; border-radius: 999px;
+  }
   #toast {
-    position: fixed; top: 18%; left: 50%; transform: translateX(-50%); z-index: 5;
-    color: #fff; font-size: 1.6rem; font-weight: 700; letter-spacing: 3px;
+    position: fixed; top: 18%; left: 50%; transform: translateX(-50%); z-index: 5; width: max-content; max-width: 90vw;
+    color: #fff; font-size: 1.5rem; font-weight: 700; letter-spacing: 2px; text-align: center;
     text-shadow: 0 2px 18px rgba(0,0,0,.5); opacity: 0; transition: opacity 1.2s; pointer-events: none;
+  }
+  #vignette { position: fixed; inset: 0; z-index: 4; pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 52%, rgba(4,8,22,.42) 100%); }
+  #joy {
+    position: fixed; width: 116px; height: 116px; border-radius: 50%; display: none; z-index: 7;
+    border: 2px solid rgba(255,255,255,.28); background: rgba(255,255,255,.05);
+    transform: translate(-50%,-50%); pointer-events: none;
+  }
+  #joyKnob {
+    position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; border-radius: 50%;
+    background: rgba(255,255,255,.4); transform: translate(-50%,-50%);
+  }
+  #boostBtn {
+    position: fixed; right: calc(20px + env(safe-area-inset-right)); bottom: calc(96px + env(safe-area-inset-bottom));
+    width: 78px; height: 78px; border-radius: 50%; display: none; z-index: 7;
+    border: 2px solid rgba(255,255,255,.28); background: rgba(8,14,34,.5); color: #fff;
+    font-size: 1.8rem; align-items: center; justify-content: center;
+    touch-action: none; -webkit-user-select: none; user-select: none;
+  }
+  #boostBtn.on { background: rgba(255,209,102,.8); }
+  @media (pointer: coarse) {
+    #hint { left: 50%; bottom: auto; top: calc(14px + env(safe-area-inset-top)); transform: translateX(-50%); text-align: center; }
+    #scenes { right: auto; left: calc(14px + env(safe-area-inset-left)); justify-content: flex-start; max-width: 55vw; }
+    #scenes button { padding: 9px 12px; font-size: 1rem; }
   }
 </style>
 <script type="importmap">
@@ -67,25 +109,34 @@
 <div id="overlay">
   <h1>SKY DRIFT ✈️</h1>
   <div class="sub">A little plane. Endless calm skies. Nowhere to be.<br>
-  Steer with ← → , climb and dive with ↑ ↓ . Change the sky whenever you feel like it.</div>
+  Fly alone, or share your sky — friends join with just a link.</div>
   <div class="mp">
-    <div class="start" id="soloBtn">Fly solo</div>
     <div class="row">
-      <button class="mbtn" id="hostBtn">Host a flight ✈️✈️</button>
+      <input id="nameInput" placeholder="Your pilot name" maxlength="14" autocomplete="off">
+    </div>
+    <button class="start" id="soloBtn">Fly solo</button>
+    <div class="row">
+      <button class="mbtn" id="hostBtn">Share my sky ✈️✈️</button>
       <input id="joinCode" placeholder="CODE" maxlength="4" autocomplete="off">
-      <button class="mbtn" id="joinBtn">Join a friend</button>
+      <button class="mbtn" id="joinBtn">Join</button>
     </div>
     <div id="mpStatus"></div>
   </div>
 </div>
-<div id="hint">← → steer &nbsp;·&nbsp; ↑ ↓ climb / dive &nbsp;·&nbsp; Shift — glide faster<br>1–5 change sky &nbsp;·&nbsp; M — wind sound on/off</div>
+<div id="vignette"></div>
+<div id="hint"></div>
 <div id="stats"></div>
 <div id="scenes"></div>
+<button id="soundBtn" title="Sound on/off">🔊</button>
+<div id="joy"><div id="joyKnob"></div></div>
+<div id="boostBtn">🚀</div>
 <div id="toast"></div>
 
 <script type="module">
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+
+const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 
 // ---------------- Scenes (moods) ----------------
 const SCENES = [
@@ -123,11 +174,12 @@ scene.fog = new THREE.Fog(cur.fog.clone(), cur.fogNear, cur.fogFar);
 const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.1, 3000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, isTouch ? 1.6 : 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.18;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.domElement.style.touchAction = 'none';
 document.body.appendChild(renderer.domElement);
 
 const hemiLight = new THREE.HemisphereLight(cur.hemiCol, 0x3a3a4a, cur.hemi);
@@ -135,40 +187,57 @@ scene.add(hemiLight);
 const dirLight = new THREE.DirectionalLight(cur.dirCol, cur.dir);
 dirLight.position.set(150, 300, -200);
 dirLight.castShadow = true;
-dirLight.shadow.mapSize.set(1024, 1024);
+dirLight.shadow.mapSize.set(isTouch ? 512 : 1024, isTouch ? 512 : 1024);
 Object.assign(dirLight.shadow.camera, { left: -160, right: 160, top: 160, bottom: -160, near: 1, far: 800 });
 scene.add(dirLight, dirLight.target);
 
-// ---------------- Sky dome ----------------
+// ---------------- Sky dome (with sun/moon glow + horizon haze) ----------------
 const skyMat = new THREE.ShaderMaterial({
-  uniforms: { topColor: { value: cur.top.clone() }, bottomColor: { value: cur.bottom.clone() } },
+  uniforms: {
+    topColor: { value: cur.top.clone() }, bottomColor: { value: cur.bottom.clone() },
+    sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunColor: { value: cur.orbCol.clone() },
+    sunAmt: { value: 1 }
+  },
   vertexShader: `varying vec3 vDir;
     void main() {
       vDir = normalize(position);
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }`,
-  fragmentShader: `uniform vec3 topColor; uniform vec3 bottomColor; varying vec3 vDir;
+  fragmentShader: `uniform vec3 topColor; uniform vec3 bottomColor;
+    uniform vec3 sunDir; uniform vec3 sunColor; uniform float sunAmt;
+    varying vec3 vDir;
     void main() {
-      float h = clamp(vDir.y * 1.6 + 0.25, 0.0, 1.0);
-      gl_FragColor = vec4(mix(bottomColor, topColor, pow(h, 0.8)), 1.0);
+      vec3 d = normalize(vDir);
+      float h = clamp(d.y * 1.6 + 0.25, 0.0, 1.0);
+      vec3 col = mix(bottomColor, topColor, pow(h, 0.8));
+      float s = max(dot(d, sunDir), 0.0);
+      col += sunColor * pow(s, 26.0) * 0.6 * sunAmt;   // bright halo hugging the orb
+      col += sunColor * pow(s, 4.0) * 0.14 * sunAmt;   // wide atmospheric wash
+      col += bottomColor * pow(1.0 - abs(d.y), 6.0) * 0.28;  // horizon haze band
+      gl_FragColor = vec4(col, 1.0);
     }`,
   side: THREE.BackSide, depthWrite: false, fog: false
 });
 const sky = new THREE.Mesh(new THREE.SphereGeometry(1400, 24, 16), skyMat);
 scene.add(sky);
 
-// ---------------- Stars ----------------
-const starPos = [];
-for (let i = 0; i < 900; i++) {
-  const t = Math.random() * Math.PI * 2, p = Math.acos(Math.random() * 0.95); // upper hemisphere
-  const r = 1150;
-  starPos.push(r * Math.sin(p) * Math.cos(t), r * Math.cos(p), r * Math.sin(p) * Math.sin(t));
+// ---------------- Stars (two layers: dust + bright twinklers) ----------------
+function starField(count, size) {
+  const pos = [];
+  for (let i = 0; i < count; i++) {
+    const t = Math.random() * Math.PI * 2, p = Math.acos(Math.random() * 0.95);
+    const r = 1150;
+    pos.push(r * Math.sin(p) * Math.cos(t), r * Math.cos(p), r * Math.sin(p) * Math.sin(t));
+  }
+  const mat = new THREE.PointsMaterial({ color: 0xffffff, size, sizeAttenuation: false,
+    transparent: true, opacity: cur.stars, fog: false, depthWrite: false });
+  const pts = new THREE.Points(
+    new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)), mat);
+  scene.add(pts);
+  return { pts, mat };
 }
-const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.8, sizeAttenuation: false,
-  transparent: true, opacity: cur.stars, fog: false, depthWrite: false });
-const stars = new THREE.Points(
-  new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3)), starMat);
-scene.add(stars);
+const starsA = starField(850, 1.7);
+const starsB = starField(130, 3.1);   // the bright ones twinkle out of phase
 
 // ---------------- Moon / Sun orb with glow ----------------
 function radialTexture() {
@@ -332,15 +401,20 @@ for (let i = 0; i < 5; i++) {
   }
 }
 
-// ---------------- Clouds (soft sprites) ----------------
+// ---------------- Clouds (soft layered sprites) ----------------
 function cloudTexture() {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const ctx = c.getContext('2d');
-  const g = ctx.createRadialGradient(64, 64, 10, 64, 64, 62);
-  g.addColorStop(0, 'rgba(255,255,255,.95)');
-  g.addColorStop(0.55, 'rgba(255,255,255,.5)');
-  g.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+  // a few overlapping puffs make a fluffier billow than one radial blob
+  const puffs = [[64, 70, 52], [40, 62, 34], [88, 60, 36], [58, 48, 28], [76, 78, 30]];
+  for (const [x, y, r] of puffs) {
+    const g = ctx.createRadialGradient(x, y, 4, x, y, r);
+    g.addColorStop(0, 'rgba(255,255,255,.55)');
+    g.addColorStop(0.6, 'rgba(255,255,255,.22)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 128, 128);
+  }
   return new THREE.CanvasTexture(c);
 }
 const cloudMat = new THREE.SpriteMaterial({ map: cloudTexture(), color: cur.cloud,
@@ -379,6 +453,60 @@ const balloons = [];
     balloons.push(b);
     scene.add(b);
   });
+}
+
+// ---------------- Birds (day scenes) ----------------
+const flocks = [];
+{
+  const birdMat = new THREE.MeshLambertMaterial({ color: 0x2b3440, side: THREE.DoubleSide });
+  const wingGeoL = new THREE.PlaneGeometry(1.5, 0.55).translate(-0.75, 0, 0);
+  const wingGeoR = new THREE.PlaneGeometry(1.5, 0.55).translate(0.75, 0, 0);
+  for (let f = 0; f < 3; f++) {
+    const flock = new THREE.Group();
+    const n = 5 + Math.floor(Math.random() * 3);
+    const members = [];
+    for (let i = 0; i < n; i++) {
+      const bird = new THREE.Group();
+      const wl = new THREE.Mesh(wingGeoL, birdMat);
+      const wr = new THREE.Mesh(wingGeoR, birdMat);
+      wl.rotation.x = wr.rotation.x = -Math.PI / 2;
+      bird.add(wl, wr);
+      const k = i - (n - 1) / 2;                       // V formation
+      bird.position.set(k * 3.2, Math.random() * 0.8, Math.abs(k) * 2.6);
+      bird.userData = { wl, wr, phase: Math.random() * 6.28 };
+      members.push(bird);
+      flock.add(bird);
+    }
+    flock.position.set((Math.random() - .5) * 900, 60 + Math.random() * 90, (Math.random() - .5) * 900);
+    flock.userData = { yaw: Math.random() * Math.PI * 2, speed: 9 + Math.random() * 5, turn: (Math.random() - .5) * 0.12, members };
+    flocks.push(flock);
+    scene.add(flock);
+  }
+}
+function updateBirds(dt, t, px, pz) {
+  const show = cur.stars < 0.25;
+  for (const flock of flocks) {
+    flock.visible = show;
+    if (!show) continue;
+    const u = flock.userData;
+    u.yaw += u.turn * dt;
+    flock.rotation.y = u.yaw;
+    flock.position.x -= Math.sin(u.yaw) * u.speed * dt;
+    flock.position.z -= Math.cos(u.yaw) * u.speed * dt;
+    flock.position.y += Math.sin(t * 0.4 + u.members[0].userData.phase) * dt * 0.8;
+    if (Math.hypot(flock.position.x - px, flock.position.z - pz) > 750) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 300 + Math.random() * 300;
+      flock.position.set(px - Math.sin(a) * r, 55 + Math.random() * 100, pz - Math.cos(a) * r);
+      u.yaw = Math.random() * Math.PI * 2;
+    }
+    for (const bird of u.members) {
+      const flap = Math.sin(t * 7 + bird.userData.phase) * 0.55;
+      bird.userData.wl.rotation.y = flap;
+      bird.userData.wr.rotation.y = -flap;
+      bird.position.y += Math.sin(t * 2 + bird.userData.phase) * dt * 0.4;
+    }
+  }
 }
 
 // ---------------- Shooting stars ----------------
@@ -587,14 +715,14 @@ function buildPlane(bodyColor) {
   }
   model.add(fuselage, nose, wing, tailWing, fin, cockpit, prop, stripe, tipL, tipR, spinner, propDisc);
   model.traverse(o => { if (o.isMesh && o !== propDisc) o.castShadow = true; });
-  return { rig, model, prop };
+  return { rig, model, prop, bodyMat };
 }
-const { rig, model, prop } = buildPlane(0xe8654f);
+const PLANE_COLS = [0xe8654f, 0x4fa3e8, 0x7ac97a, 0xf2c14e, 0xc79bf2, 0xff8fa3, 0x6fd9c8, 0xffa94d];
+const { rig, model, prop, bodyMat: myBodyMat } = buildPlane(PLANE_COLS[0]);
 scene.add(rig);
 
 // ---------------- Wingtip contrails ----------------
-function makeTrail(color) {
-  const N = 60;
+function makeTrail(color, N = 60) {
   const geo = new THREE.BufferGeometry();
   const posArr = new Float32Array(N * 2 * 3);
   const colArr = new Float32Array(N * 2 * 4);
@@ -639,7 +767,7 @@ let trailAcc = 0;
 
 const state = { pos: new THREE.Vector3(0, 70, 0), yaw: 0, pitch: 0, roll: 0 };
 
-// ---------------- Input ----------------
+// ---------------- Input: keyboard ----------------
 const keys = {};
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
@@ -648,17 +776,75 @@ addEventListener('keydown', e => {
     const i = +e.code[5] - 1;
     if (SCENES[i]) setScene(i);
   }
-  if (e.code === 'KeyM') toggleWind();
+  if (e.code === 'KeyM') toggleSound();
 });
 addEventListener('keyup', e => keys[e.code] = false);
 
-// ---------------- Wind sound ----------------
-let audioCtx = null, windGain = null, muted = false;
+// ---------------- Input: touch (joystick + boost) ----------------
+const touchInput = { x: 0, y: 0, boost: false };
+const joyEl = document.getElementById('joy');
+const joyKnob = document.getElementById('joyKnob');
+const boostBtn = document.getElementById('boostBtn');
+let joyId = null, joyBaseX = 0, joyBaseY = 0;
+const JOY_R = 55;
+
+renderer.domElement.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (!flying) return;
+  for (const t of e.changedTouches) {
+    if (joyId === null) {
+      joyId = t.identifier;
+      joyBaseX = t.clientX; joyBaseY = t.clientY;
+      joyEl.style.display = 'block';
+      joyEl.style.left = joyBaseX + 'px';
+      joyEl.style.top = joyBaseY + 'px';
+      joyKnob.style.transform = 'translate(-50%,-50%)';
+    }
+  }
+}, { passive: false });
+renderer.domElement.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (t.identifier === joyId) {
+      const dx = Math.max(-1, Math.min(1, (t.clientX - joyBaseX) / JOY_R));
+      const dy = Math.max(-1, Math.min(1, (t.clientY - joyBaseY) / JOY_R));
+      touchInput.x = dx; touchInput.y = dy;
+      joyKnob.style.transform = `translate(calc(-50% + ${dx * JOY_R * 0.6}px), calc(-50% + ${dy * JOY_R * 0.6}px))`;
+    }
+  }
+}, { passive: false });
+function endTouch(e) {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joyId) {
+      joyId = null;
+      touchInput.x = touchInput.y = 0;
+      joyEl.style.display = 'none';
+    }
+  }
+}
+renderer.domElement.addEventListener('touchend', endTouch);
+renderer.domElement.addEventListener('touchcancel', endTouch);
+boostBtn.addEventListener('touchstart', e => { e.preventDefault(); touchInput.boost = true; boostBtn.classList.add('on'); }, { passive: false });
+boostBtn.addEventListener('touchend', () => { touchInput.boost = false; boostBtn.classList.remove('on'); });
+boostBtn.addEventListener('touchcancel', () => { touchInput.boost = false; boostBtn.classList.remove('on'); });
+
+// ---------------- Relaxing soundscape (all synthesized, stereo) ----------------
+let AC = null, master = null, chimeSend = null, soundOn = true;
+const soundBtn = document.getElementById('soundBtn');
+function makePan(v) {
+  if (AC.createStereoPanner) { const p = AC.createStereoPanner(); p.pan.value = v; return p; }
+  return AC.createGain();   // older Safari: no panning, still plays
+}
 function initAudio() {
-  if (audioCtx) return;
+  if (AC) { AC.resume && AC.resume(); return; }
   try {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 3, audioCtx.sampleRate);
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain();
+    master.gain.value = 1;
+    master.connect(AC.destination);
+
+    // --- soft wind: filtered brown-ish noise with a slow breathing LFO ---
+    const buf = AC.createBuffer(1, AC.sampleRate * 3, AC.sampleRate);
     const d = buf.getChannelData(0);
     let last = 0;
     for (let i = 0; i < d.length; i++) {
@@ -666,24 +852,101 @@ function initAudio() {
       last = (last + 0.02 * w) / 1.02;
       d[i] = last * 3.2;
     }
-    const src = audioCtx.createBufferSource();
+    const src = AC.createBufferSource();
     src.buffer = buf; src.loop = true;
-    const filt = audioCtx.createBiquadFilter();
-    filt.type = 'lowpass'; filt.frequency.value = 480;
-    windGain = audioCtx.createGain();
-    windGain.gain.value = 0.07;
-    src.connect(filt); filt.connect(windGain); windGain.connect(audioCtx.destination);
+    const filt = AC.createBiquadFilter();
+    filt.type = 'lowpass'; filt.frequency.value = 420;
+    const windGain = AC.createGain();
+    windGain.gain.value = 0.05;
+    src.connect(filt); filt.connect(windGain); windGain.connect(master);
     src.start();
-    const lfo = audioCtx.createOscillator(), lfoGain = audioCtx.createGain();
-    lfo.frequency.value = 0.11; lfoGain.gain.value = 0.025;
+    const lfo = AC.createOscillator(), lfoGain = AC.createGain();
+    lfo.frequency.value = 0.11; lfoGain.gain.value = 0.02;
     lfo.connect(lfoGain); lfoGain.connect(windGain.gain);
     lfo.start();
+
+    // --- ping-pong echo bus (chimes drift between ears) ---
+    const delayA = AC.createDelay(1), delayB = AC.createDelay(1);
+    delayA.delayTime.value = 0.42; delayB.delayTime.value = 0.61;
+    const fbA = AC.createGain(), fbB = AC.createGain();
+    fbA.gain.value = 0.34; fbB.gain.value = 0.34;
+    const panA = makePan(-0.65), panB = makePan(0.65);
+    const echoOut = AC.createGain(); echoOut.gain.value = 0.5;
+    delayA.connect(fbA); fbA.connect(delayB);
+    delayB.connect(fbB); fbB.connect(delayA);
+    delayA.connect(panA); panA.connect(echoOut);
+    delayB.connect(panB); panB.connect(echoOut);
+    echoOut.connect(master);
+    chimeSend = delayA;
+
+    // --- slow ambient pad: drifting chords through a breathing lowpass ---
+    const padLP = AC.createBiquadFilter();
+    padLP.type = 'lowpass'; padLP.frequency.value = 720; padLP.Q.value = 0.4;
+    const padGain = AC.createGain(); padGain.gain.value = 0.14;
+    padLP.connect(padGain); padGain.connect(master);
+    const padLfo = AC.createOscillator(), padLfoG = AC.createGain();
+    padLfo.frequency.value = 0.05; padLfoG.gain.value = 190;
+    padLfo.connect(padLfoG); padLfoG.connect(padLP.frequency);
+    padLfo.start();
+
+    const CHORDS = [                       // midi notes — a gentle circular progression
+      [48, 55, 60, 64],                    // Cmaj
+      [45, 52, 60, 64],                    // Am7-ish
+      [41, 48, 57, 65],                    // Fmaj
+      [43, 50, 59, 62]                     // G-ish
+    ];
+    const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+    let ci = 0;
+    const HOLD = 12, FADE = 5;
+    function playChord() {
+      if (!AC) return;
+      const notes = CHORDS[ci % CHORDS.length]; ci++;
+      const now = AC.currentTime;
+      notes.forEach((m, i) => {
+        [['sine', -4], ['triangle', 7]].forEach(([type, det]) => {
+          const o = AC.createOscillator();
+          o.type = type; o.frequency.value = mtof(m); o.detune.value = det;
+          const g = AC.createGain();
+          g.gain.setValueAtTime(0.0001, now);
+          g.gain.linearRampToValueAtTime(0.045, now + FADE);
+          g.gain.setValueAtTime(0.045, now + HOLD - FADE);
+          g.gain.linearRampToValueAtTime(0.0001, now + HOLD);
+          const p = makePan(i % 2 ? 0.35 : -0.35);
+          o.connect(g); g.connect(p); p.connect(padLP);
+          o.start(now); o.stop(now + HOLD + 0.1);
+        });
+      });
+      setTimeout(playChord, (HOLD - FADE) * 1000);   // next chord fades in as this fades out
+    }
+    playChord();
+
+    // --- occasional soft pentatonic chimes ---
+    const PENTA = [72, 76, 79, 81, 84, 88];
+    function chime() {
+      if (!AC) return;
+      const now = AC.currentTime;
+      const o = AC.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = mtof(PENTA[Math.floor(Math.random() * PENTA.length)]);
+      const g = AC.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.linearRampToValueAtTime(0.055, now + 0.15);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 3.5);
+      const p = makePan((Math.random() - .5) * 1.2);
+      o.connect(g); g.connect(p); p.connect(master);
+      g.connect(chimeSend);
+      o.start(now); o.stop(now + 3.8);
+      setTimeout(chime, 4500 + Math.random() * 8000);
+    }
+    setTimeout(chime, 6000);
   } catch (e) { /* no audio, no problem */ }
 }
-function toggleWind() {
-  muted = !muted;
-  if (windGain) windGain.gain.value = muted ? 0 : 0.07;
+function toggleSound() {
+  soundOn = !soundOn;
+  if (AC && master) master.gain.setTargetAtTime(soundOn ? 1 : 0, AC.currentTime, 0.15);
+  soundBtn.textContent = soundOn ? '🔊' : '🔇';
 }
+soundBtn.onclick = toggleSound;
 
 // ---------------- UI ----------------
 const overlay = document.getElementById('overlay');
@@ -691,11 +954,21 @@ const hint = document.getElementById('hint');
 const toast = document.getElementById('toast');
 const statsEl = document.getElementById('stats');
 const sceneBar = document.getElementById('scenes');
+const mpStatus = document.getElementById('mpStatus');
+const nameInput = document.getElementById('nameInput');
+const joinInput = document.getElementById('joinCode');
 let flying = false;
+
+hint.innerHTML = isTouch
+  ? 'Drag anywhere to steer · hold 🚀 to boost'
+  : '← → steer &nbsp;·&nbsp; ↑ ↓ climb / dive &nbsp;·&nbsp; Shift — glide faster<br>1–5 change sky &nbsp;·&nbsp; M — sound on/off';
+
+nameInput.value = localStorage.getItem('skydrift-name') || '';
 
 SCENES.forEach((s, i) => {
   const b = document.createElement('button');
-  b.textContent = s.name;
+  b.textContent = isTouch ? s.name.split(' ')[0] : s.name;
+  b.title = s.name;
   b.onclick = () => setScene(i);
   sceneBar.appendChild(b);
 });
@@ -716,7 +989,13 @@ function setScene(i, fromNet) {
   cityGroup.visible = target.city > 0;
   refreshButtons();
   showToast(target.name);
-  if (!fromNet && conn && conn.open) conn.send({ t: 'scene', i });
+  if (!fromNet) netSendScene(i);
+}
+
+function myName() {
+  const n = nameInput.value.trim().slice(0, 14);
+  if (n) localStorage.setItem('skydrift-name', n);
+  return n || 'pilot';
 }
 
 function startFlight() {
@@ -724,107 +1003,266 @@ function startFlight() {
   overlay.style.display = 'none';
   flying = true;
   initAudio();
-  setScene(0);
+  soundBtn.style.display = 'block';
+  if (isTouch) {
+    boostBtn.style.display = 'flex';
+    if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
+  }
   setTimeout(() => hint.style.opacity = 0.25, 12000);
 }
 
-// ---------------- Multiplayer (free P2P via PeerJS) ----------------
-let peer = null, conn = null, roomCode = null, netTimer = 0;
-const remote = { plane: null, target: null, active: false };
-const mpStatus = document.getElementById('mpStatus');
-const joinInput = document.getElementById('joinCode');
+// ---------------- Multiplayer — shared sky over a link (P2P star, host relays) ----------------
+// Host creates room `sky-drift-room-XXXX` and shares ?room=XXXX link. Every joiner
+// connects to the host; the host relays states so all planes see each other.
+const MAX_PLAYERS = 8;
+let peer = null, isHost = false, hostConn = null, roomCode = null, netTimer = 0;
+const conns = new Map();     // host only: playerId -> DataConnection
+const players = new Map();   // playerId -> { plane, target, name, phase, trailL, trailR }
+let nextId = 1;
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const codeToId = c => 'sky-drift-room-' + c.toLowerCase();
 
 function makeLabel(text) {
   const c = document.createElement('canvas'); c.width = 256; c.height = 64;
   const ctx = c.getContext('2d');
-  ctx.font = 'bold 34px system-ui, sans-serif'; ctx.textAlign = 'center';
+  ctx.font = 'bold 30px system-ui, sans-serif'; ctx.textAlign = 'center';
   ctx.shadowColor = 'rgba(0,0,0,.65)'; ctx.shadowBlur = 8;
   ctx.fillStyle = 'rgba(255,255,255,.95)';
-  ctx.fillText(text, 128, 42);
+  ctx.fillText(String(text).slice(0, 16), 128, 42);
   const mat = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c),
     transparent: true, depthWrite: false, fog: false });
   const s = new THREE.Sprite(mat);
-  s.scale.set(14, 3.5, 1);
+  s.scale.set(13, 3.25, 1);
   s.position.y = 3.2;
   return s;
 }
 
-function spawnRemote() {
-  if (remote.plane) return;
-  remote.plane = buildPlane(0x4fa3e8);
-  remote.plane.rig.add(makeLabel('friend ✈️'));
-  scene.add(remote.plane.rig);
-  remote.target = { pos: state.pos.clone().add(new THREE.Vector3(12, 0, 0)), yaw: state.yaw, pitch: 0, roll: 0 };
-  remote.plane.rig.position.copy(remote.target.pos);
-  remote.trailL = makeTrail(0xd9ecff);
-  remote.trailR = makeTrail(0xd9ecff);
-  remote.active = true;
+function addPlayer(id, name) {
+  if (players.has(id)) return;
+  const plane = buildPlane(PLANE_COLS[id % PLANE_COLS.length]);
+  plane.rig.add(makeLabel(name || 'pilot'));
+  scene.add(plane.rig);
+  const p = {
+    plane, name: name || 'pilot', phase: (id * 1.7) % 6.28, lastSeen: performance.now(),
+    target: { pos: state.pos.clone().add(new THREE.Vector3(10 + id * 6, 0, 0)), yaw: state.yaw, pitch: 0, roll: 0 },
+    trailL: makeTrail(0xd9ecff, 44), trailR: makeTrail(0xd9ecff, 44)
+  };
+  plane.rig.position.copy(p.target.pos);
+  players.set(id, p);
 }
-function despawnRemote() {
-  if (remote.plane) scene.remove(remote.plane.rig);
-  if (remote.trailL) { scene.remove(remote.trailL.mesh); scene.remove(remote.trailR.mesh); }
-  remote.plane = remote.trailL = remote.trailR = null;
-  remote.active = false;
-  conn = null;
+function removePlayer(id) {
+  const p = players.get(id);
+  if (!p) return;
+  scene.remove(p.plane.rig);
+  scene.remove(p.trailL.mesh); scene.remove(p.trailR.mesh);
+  players.delete(id);
+}
+function removeAllPlayers() { for (const id of [...players.keys()]) removePlayer(id); }
+
+function applyRemoteState(id, d) {
+  const p = players.get(id);
+  if (!p) return;
+  p.lastSeen = performance.now();
+  p.target.pos.set(d.p[0], d.p[1], d.p[2]);
+  p.target.yaw = d.yw; p.target.pitch = d.pt; p.target.roll = d.rl;
 }
 
-function onNetData(d) {
-  if (d.t === 's' && remote.target) {
-    remote.target.pos.set(d.p[0], d.p[1], d.p[2]);
-    remote.target.yaw = d.yw; remote.target.pitch = d.pt; remote.target.roll = d.rl;
-  } else if (d.t === 'scene') {
-    setScene(d.i, true);
+function broadcast(msg, exceptId) {
+  for (const [id, c] of conns) if (id !== exceptId && c.open) c.send(msg);
+}
+function netSendScene(i) {
+  if (isHost) broadcast({ t: 'scene', i });
+  else if (hostConn && hostConn.open) hostConn.send({ t: 'scene', i });
+}
+
+function roomLink() {
+  return location.origin + location.pathname + '?room=' + roomCode;
+}
+function showHostLink() {
+  mpStatus.innerHTML = '';
+  const line = document.createElement('div');
+  line.textContent = `Room ${roomCode} — anyone with this link joins your sky:`;
+  const linkEl = document.createElement('a');
+  linkEl.href = roomLink(); linkEl.textContent = roomLink();
+  linkEl.onclick = e => e.preventDefault();
+  const btns = document.createElement('div');
+  const copyBtn = document.createElement('button');
+  copyBtn.textContent = 'Copy link';
+  copyBtn.onclick = () => {
+    (navigator.clipboard ? navigator.clipboard.writeText(roomLink()) : Promise.reject())
+      .then(() => copyBtn.textContent = 'Copied ✓')
+      .catch(() => { linkEl.focus(); copyBtn.textContent = roomLink(); });
+  };
+  btns.appendChild(copyBtn);
+  if (navigator.share) {
+    const shareBtn = document.createElement('button');
+    shareBtn.textContent = 'Share…';
+    shareBtn.onclick = () => navigator.share({ title: 'Sky Drift', text: 'Come fly with me ✈️', url: roomLink() }).catch(() => {});
+    btns.appendChild(shareBtn);
   }
-}
-
-function setupConn(c) {
-  if (conn && conn.open) { c.close(); return; }   // it's a two-seater sky
-  conn = c;
-  c.on('open', () => {
-    mpStatus.textContent = '';
-    spawnRemote();
-    showToast('✈️✈️ Friend connected!');
-    startFlight();
-    if (roomCode) conn.send({ t: 'scene', i: SCENES.indexOf(target) });   // host shares its sky
-  });
-  c.on('data', onNetData);
-  c.on('close', () => { despawnRemote(); showToast('Friend flew away 👋'); });
-  c.on('error', () => { despawnRemote(); showToast('Connection lost 📡'); });
+  mpStatus.append(line, linkEl, btns);
 }
 
 function hostFlight() {
   if (peer) return;
   roomCode = Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
-  mpStatus.textContent = 'Setting up room…';
+  mpStatus.textContent = 'Setting up your sky…';
+  isHost = true;
   peer = new Peer(codeToId(roomCode));
   peer.on('open', () => {
-    mpStatus.textContent = `Room code: ${roomCode} — send it to your friend, then take off. They'll appear beside you.`;
-    const takeoff = document.getElementById('soloBtn');
-    takeoff.textContent = `Take off (room ${roomCode})`;
+    showHostLink();
+    document.getElementById('soloBtn').textContent = `Take off ✈️ (room ${roomCode})`;
   });
-  peer.on('connection', setupConn);
+  peer.on('connection', c => {
+    if (conns.size >= MAX_PLAYERS - 1) {
+      c.on('open', () => { c.send({ t: 'full' }); setTimeout(() => c.close(), 200); });
+      return;
+    }
+    let cid = null;
+    c.on('data', d => {
+      if (d.t === 'hi' && cid === null) {
+        cid = nextId++;
+        conns.set(cid, c);
+        c._name = d.name;
+        const roster = [{ id: 0, name: myName() }];
+        for (const [id, p] of players) roster.push({ id, name: p.name });
+        c.send({ t: 'welcome', id: cid, scene: SCENES.indexOf(target),
+          p: [state.pos.x, state.pos.y, state.pos.z], roster });
+        addPlayer(cid, d.name);
+        broadcast({ t: 'join', id: cid, name: d.name }, cid);
+        showToast(`${d.name || 'A pilot'} joined ✈️`);
+        startFlight();
+      } else if (d.t === 's' && cid !== null) {
+        if (!players.has(cid)) {          // came back after a stale sweep
+          addPlayer(cid, c._name);
+          broadcast({ t: 'join', id: cid, name: c._name }, cid);
+        }
+        applyRemoteState(cid, d);
+        broadcast({ t: 's', id: cid, p: d.p, yw: d.yw, pt: d.pt, rl: d.rl }, cid);
+      } else if (d.t === 'scene') {
+        setScene(d.i, true);
+        broadcast({ t: 'scene', i: d.i }, cid);
+      } else if (d.t === 'bye') {
+        bye();
+      }
+    });
+    const bye = () => {
+      if (cid === null || !conns.has(cid)) return;
+      const name = players.get(cid) ? players.get(cid).name : 'a pilot';
+      conns.delete(cid);
+      removePlayer(cid);
+      broadcast({ t: 'leave', id: cid });
+      showToast(`${name} flew away 👋`);
+      cid = null;
+    };
+    c.on('close', bye);
+    c.on('error', bye);
+  });
+  peer.on('disconnected', () => peer && peer.reconnect());
   peer.on('error', err => {
-    if (err.type === 'unavailable-id') { peer.destroy(); peer = null; hostFlight(); }
+    if (err.type === 'unavailable-id') { peer.destroy(); peer = null; isHost = false; hostFlight(); }
     else mpStatus.textContent = 'Network error: ' + err.type;
   });
 }
 
+function onHostData(d) {
+  if (d.t === 'welcome') {
+    myBodyMat.color.setHex(PLANE_COLS[d.id % PLANE_COLS.length]);
+    setScene(d.scene, true);
+    state.pos.set(d.p[0] + 10 + Math.random() * 14, Math.max(30, d.p[1]), d.p[2] + (Math.random() - .5) * 16);
+    d.roster.forEach(r => addPlayer(r.id, r.name));
+    mpStatus.textContent = '';
+    showToast('✈️✈️ You joined the sky!');
+    startFlight();
+  } else if (d.t === 'join') {
+    addPlayer(d.id, d.name);
+    showToast(`${d.name || 'A pilot'} joined ✈️`);
+  } else if (d.t === 'leave') {
+    const p = players.get(d.id);
+    showToast(`${p ? p.name : 'A pilot'} flew away 👋`);
+    removePlayer(d.id);
+  } else if (d.t === 's') {
+    applyRemoteState(d.id, d);
+  } else if (d.t === 'scene') {
+    setScene(d.i, true);
+  } else if (d.t === 'bye-host') {
+    removeAllPlayers();
+    hostConn = null;
+    showToast('Host left — the sky is all yours 👋');
+  } else if (d.t === 'full') {
+    mpStatus.textContent = 'That sky is full (8 planes) — try again later!';
+  }
+}
+
 function joinFlight(code) {
   if (peer) return;
-  if (!code || code.length < 4) { mpStatus.textContent = 'Type the 4-letter code first'; return; }
+  if (!code || code.length < 4) { mpStatus.textContent = 'Type the 4-letter room code first'; return; }
   mpStatus.textContent = 'Connecting…';
   peer = new Peer();
-  peer.on('open', () => setupConn(peer.connect(codeToId(code))));
+  peer.on('open', () => {
+    const c = peer.connect(codeToId(code));
+    hostConn = c;
+    c.on('open', () => c.send({ t: 'hi', name: myName() }));
+    c.on('data', onHostData);
+    const gone = () => {
+      removeAllPlayers();
+      hostConn = null;
+      showToast('Host left — the sky is all yours 👋');
+    };
+    c.on('close', gone);
+    c.on('error', gone);
+  });
   peer.on('error', err => {
     if (err.type === 'peer-unavailable') {
-      mpStatus.textContent = 'No room with that code — ask your friend for it again.';
-      peer.destroy(); peer = null;
+      mpStatus.textContent = 'No sky with that code — ask your friend for a fresh link.';
+      peer.destroy(); peer = null; hostConn = null;
     } else mpStatus.textContent = 'Network error: ' + err.type;
   });
-  state.pos.x += 12;   // spawn beside the host, not inside them
 }
+
+// tell the others right away when this tab closes (PeerJS close events are slow)
+addEventListener('pagehide', () => {
+  try {
+    if (isHost) broadcast({ t: 'bye-host' });
+    else if (hostConn && hostConn.open) hostConn.send({ t: 'bye' });
+  } catch (e) { /* best effort */ }
+});
+// heartbeat via setInterval — keeps running when the tab is backgrounded (rAF doesn't)
+setInterval(() => {
+  if (!(isHost ? conns.size > 0 : (hostConn && hostConn.open))) return;
+  const msg = { t: 's', p: [+state.pos.x.toFixed(2), +state.pos.y.toFixed(2), +state.pos.z.toFixed(2)],
+    yw: state.yaw, pt: state.pitch, rl: state.roll };
+  if (isHost) broadcast({ ...msg, id: 0 });
+  else hostConn.send(msg);
+}, 2000);
+// stale sweep — long fuse so throttled background tabs aren't kicked
+const STALE_MS = 70000;
+setInterval(() => {
+  const now = performance.now();
+  if (isHost) {
+    for (const [id, c] of conns) {
+      const p = players.get(id);
+      if (p && now - p.lastSeen > STALE_MS) {
+        conns.delete(id);
+        removePlayer(id);
+        broadcast({ t: 'leave', id });
+        showToast(`${p.name} flew away 👋`);
+        try { c.close(); } catch (e) { /* already gone */ }
+      }
+    }
+  } else if (hostConn) {
+    const host = players.get(0);
+    if (host && now - host.lastSeen > STALE_MS) {
+      removeAllPlayers();
+      hostConn = null;
+      showToast('Host left — the sky is all yours 👋');
+    } else {
+      for (const [id, p] of players) {
+        if (id !== 0 && now - p.lastSeen > STALE_MS) removePlayer(id);
+      }
+    }
+  }
+}, 5000);
 
 document.getElementById('soloBtn').onclick = startFlight;
 document.getElementById('hostBtn').onclick = hostFlight;
@@ -833,6 +1271,18 @@ joinInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') joinFlight(joinInput.value.trim().toUpperCase());
 });
 
+// invited via link? pre-fill the room and make joining the main action
+const urlRoom = (new URLSearchParams(location.search).get('room') || '').trim().toUpperCase();
+if (urlRoom) {
+  joinInput.value = urlRoom;
+  const solo = document.getElementById('soloBtn');
+  solo.textContent = `Join the flight ✈️ (room ${urlRoom})`;
+  solo.onclick = () => joinFlight(urlRoom);
+  document.getElementById('hostBtn').style.display = 'none';
+  mpStatus.textContent = 'You\'ve been invited to a shared sky — pick a name and hop in!';
+  nameInput.focus();
+}
+
 // ---------------- Flight + world update ----------------
 const FWD = new THREE.Vector3();
 const camTarget = new THREE.Vector3();
@@ -840,10 +1290,14 @@ const camTarget = new THREE.Vector3();
 function updateFlight(dt, t) {
   const left = keys['ArrowLeft'] || keys['KeyA'], right = keys['ArrowRight'] || keys['KeyD'];
   const up = keys['ArrowUp'] || keys['KeyW'], down = keys['ArrowDown'] || keys['KeyS'];
-  const boost = keys['ShiftLeft'] || keys['ShiftRight'];
+  let steer = (left ? 1 : 0) + (right ? -1 : 0) - touchInput.x;
+  let climb = (up ? 1 : 0) + (down ? -1 : 0) - touchInput.y;
+  steer = Math.max(-1, Math.min(1, steer));
+  climb = Math.max(-1, Math.min(1, climb));
+  const boost = keys['ShiftLeft'] || keys['ShiftRight'] || touchInput.boost;
 
-  const targetRoll = (left ? 0.55 : 0) + (right ? -0.55 : 0);
-  const targetPitch = (up ? 0.30 : 0) + (down ? -0.30 : 0);
+  const targetRoll = steer * 0.55;
+  const targetPitch = climb * 0.30;
   state.roll += (targetRoll - state.roll) * Math.min(1, dt * 2.5);
   state.pitch += (targetPitch - state.pitch) * Math.min(1, dt * 2.2);
   state.yaw += state.roll * dt * 0.85;
@@ -876,6 +1330,7 @@ function updateFlight(dt, t) {
     camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3);
     camera.updateProjectionMatrix();
   }
+  return boost;
 }
 
 function recycleClouds() {
@@ -916,11 +1371,13 @@ function lerpScene(dt) {
 
   skyMat.uniforms.topColor.value.copy(cur.top);
   skyMat.uniforms.bottomColor.value.copy(cur.bottom);
+  skyMat.uniforms.sunColor.value.copy(cur.orbCol);
+  skyMat.uniforms.sunDir.value.copy(cur.orbPos).normalize();
+  skyMat.uniforms.sunAmt.value = cur.orb;
   scene.fog.color.copy(cur.fog);
   scene.fog.near = cur.fogNear; scene.fog.far = cur.fogFar;
   groundMat.color.copy(cur.ground);
   cloudMat.color.copy(cur.cloud); cloudMat.opacity = cur.cloudOp;
-  starMat.opacity = cur.stars;
   orbMat.color.copy(cur.orbCol); orbMat.opacity = cur.orb;
   glowMat.color.copy(cur.orbCol); glowMat.opacity = cur.orb * .8;
   orb.scale.setScalar(cur.orbScale);
@@ -945,7 +1402,8 @@ renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
 
-  if (flying) updateFlight(dt, t);
+  let boosting = false;
+  if (flying) boosting = updateFlight(dt, t);
   else { // idle drift behind the title screen
     state.pos.z -= 8 * dt;
     rig.position.copy(state.pos);
@@ -956,21 +1414,23 @@ renderer.setAnimationLoop(() => {
 
   // ----- multiplayer sync -----
   netTimer += dt;
-  if (conn && conn.open && flying && netTimer > 0.08) {
+  if (netTimer > 0.08 && (isHost ? conns.size > 0 : (hostConn && hostConn.open))) {
     netTimer = 0;
-    conn.send({ t: 's',
+    const msg = { t: 's',
       p: [+state.pos.x.toFixed(2), +state.pos.y.toFixed(2), +state.pos.z.toFixed(2)],
-      yw: state.yaw, pt: state.pitch, rl: state.roll });
+      yw: state.yaw, pt: state.pitch, rl: state.roll };
+    if (isHost) broadcast({ ...msg, id: 0 });
+    else hostConn.send(msg);
   }
-  if (remote.active) {
+  for (const p of players.values()) {
     const k = 1 - Math.exp(-dt * 8);
-    const r = remote.plane.rig;
-    r.position.lerp(remote.target.pos, k);
-    r.rotation.x += (remote.target.pitch - r.rotation.x) * k;
-    r.rotation.y += (remote.target.yaw - r.rotation.y) * k;
-    r.rotation.z += (remote.target.roll - r.rotation.z) * k;
-    remote.plane.model.position.y = Math.sin(t * 1.6 + 1.3) * 0.25;
-    remote.plane.prop.rotation.z += dt * 45;
+    const r = p.plane.rig;
+    r.position.lerp(p.target.pos, k);
+    r.rotation.x += (p.target.pitch - r.rotation.x) * k;
+    r.rotation.y += (p.target.yaw - r.rotation.y) * k;
+    r.rotation.z += (p.target.roll - r.rotation.z) * k;
+    p.plane.model.position.y = Math.sin(t * 1.6 + p.phase) * 0.25;
+    p.plane.prop.rotation.z += dt * 45;
   }
   trailAcc += dt;
   if (trailAcc >= 0.045) {
@@ -979,9 +1439,9 @@ renderer.setAnimationLoop(() => {
       rig.updateMatrixWorld(true);
       planeTrails(model, trailL, trailR);
     }
-    if (remote.active) {
-      remote.plane.rig.updateMatrixWorld(true);
-      planeTrails(remote.plane.model, remote.trailL, remote.trailR);
+    for (const p of players.values()) {
+      p.plane.rig.updateMatrixWorld(true);
+      planeTrails(p.plane.model, p.trailL, p.trailR);
     }
   }
 
@@ -996,6 +1456,7 @@ renderer.setAnimationLoop(() => {
       b.position.set(state.pos.x - Math.sin(a) * r, 45 + Math.random() * 140, state.pos.z - Math.cos(a) * r);
     }
   }
+  updateBirds(dt, t, state.pos.x, state.pos.z);
   updateCity(state.pos.x, state.pos.z);
   lerpScene(dt);
 
@@ -1062,11 +1523,13 @@ renderer.setAnimationLoop(() => {
       shootVel.set((Math.random() - .5) * 300, -140 - Math.random() * 80, (Math.random() - .5) * 300);
     }
   }
-  starMat.opacity = cur.stars * (0.88 + 0.12 * Math.sin(t * 2.7));
+  starsA.mat.opacity = cur.stars * (0.88 + 0.12 * Math.sin(t * 2.7));
+  starsB.mat.opacity = cur.stars * (0.7 + 0.3 * Math.sin(t * 1.9 + 2.1));
 
   // world anchors follow the plane
   sky.position.copy(state.pos);
-  stars.position.copy(state.pos);
+  starsA.pts.position.copy(state.pos);
+  starsB.pts.position.copy(state.pos);
   orbGroup.position.copy(state.pos).add(cur.orbPos);
   updateGround(state.pos.x, state.pos.z);
 
@@ -1074,9 +1537,9 @@ renderer.setAnimationLoop(() => {
   if (statTick > 0.25) {
     statTick = 0;
     let extra = '';
-    if (remote.active) extra = `<br>👥 friend ${Math.round(state.pos.distanceTo(remote.plane.rig.position))} m away`;
-    else if (roomCode && peer && !peer.destroyed) extra = `<br>🔑 room ${roomCode} — waiting…`;
-    statsEl.innerHTML = `⛰️ ${Math.round(state.pos.y)} m<br>✈️ ${keys['ShiftLeft'] || keys['ShiftRight'] ? 55 : 26} m/s${extra}`;
+    if (players.size > 0) extra = `<br>👥 ${players.size + 1} flying together`;
+    else if (isHost && roomCode) extra = `<br>🔑 room ${roomCode} — share the link!`;
+    statsEl.innerHTML = `⛰️ ${Math.round(state.pos.y)} m<br>✈️ ${boosting ? 55 : 26} m/s${extra}`;
   }
 
   renderer.render(scene, camera);

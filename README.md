@@ -7,7 +7,7 @@ A collection of small browser games, each a single self-contained `index.html`.
 | Project | Description |
 |---|---|
 | [Guwahati Walk](https://meihuankit.github.io/randomProj/guwahati-walk/) | A walking exploration game set in Guwahati |
-| [Sky Drift](https://meihuankit.github.io/randomProj/sky-flyer/) | A night-sky flying game with multiplayer rooms |
+| [Sky Drift](https://meihuankit.github.io/randomProj/sky-flyer/) | A relaxing flying game — works on phones, ambient soundtrack, and friends join your sky with just a link |
 
 ## Running locally
 
