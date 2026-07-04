@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0a1030">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Sky Drift ✈️</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✈️</text></svg>">
+<title>Sky Drift 🌙</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌙</text></svg>">
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #0a1030; font-family: system-ui, sans-serif;
     touch-action: none; -webkit-user-select: none; user-select: none; }
@@ -65,6 +65,14 @@
     z-index: 6; display: none; border: 1px solid rgba(255,255,255,.15); cursor: pointer;
     background: rgba(8, 14, 34, .5); color: #fff; font-size: 1.1rem; padding: 8px 12px; border-radius: 999px;
   }
+  #buddies { position: fixed; inset: 0; z-index: 5; pointer-events: none; }
+  #buddies .buddy {
+    position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 6px;
+    font-size: .8rem; font-weight: 700; white-space: nowrap;
+    background: rgba(8,14,34,.55); padding: 3px 10px; border-radius: 999px;
+    text-shadow: 0 1px 6px rgba(0,0,0,.8);
+  }
+  #buddies .buddy .arr { display: inline-block; font-size: .9rem; }
   #toast {
     position: fixed; top: 18%; left: 50%; transform: translateX(-50%); z-index: 5; width: max-content; max-width: 90vw;
     color: #fff; font-size: 1.5rem; font-weight: 700; letter-spacing: 2px; text-align: center;
@@ -115,8 +123,8 @@ addEventListener('error', () => {
 </head>
 <body>
 <div id="overlay">
-  <h1>SKY DRIFT ✈️</h1>
-  <div class="sub">A little plane. Endless calm skies. Nowhere to be.<br>
+  <h1>SKY DRIFT 🌙</h1>
+  <div class="sub">Just you, the wind, and endless calm skies. Nowhere to be.<br>
   Fly alone, or share your sky — friends join with just a link.</div>
   <div class="mp">
     <div class="row">
@@ -124,7 +132,7 @@ addEventListener('error', () => {
     </div>
     <button class="start" id="soloBtn">Fly solo</button>
     <div class="row">
-      <button class="mbtn" id="hostBtn">Share my sky ✈️✈️</button>
+      <button class="mbtn" id="hostBtn">Share my sky 🕊️🕊️</button>
       <input id="joinCode" placeholder="CODE" maxlength="4" autocomplete="off">
       <button class="mbtn" id="joinBtn">Join</button>
     </div>
@@ -132,6 +140,7 @@ addEventListener('error', () => {
   </div>
 </div>
 <div id="vignette"></div>
+<div id="buddies"></div>
 <div id="hint"></div>
 <div id="stats"></div>
 <div id="scenes"></div>
@@ -861,64 +870,96 @@ const navMats = {
   green: new THREE.MeshBasicMaterial({ color: 0x49ff85, transparent: true, fog: false }),
   strobe: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, fog: false })
 };
-function buildPlane(bodyColor) {
+// A wanderer: messy dark hair, oversized black tee, baggy cargo pants, cream
+// sneakers — gliding prone through the night. The accent color (wristbands,
+// pendant, contrail) tells friends apart; the outfit stays true to the look.
+function buildFlyer(accent) {
   const rig = new THREE.Group();          // position + heading
   rig.rotation.order = 'YXZ';
   const model = new THREE.Group();        // gentle bobbing
   rig.add(model);
+  const pose = new THREE.Group();
+  pose.rotation.x = -Math.PI / 2;         // built standing, flown prone
+  pose.scale.setScalar(1.15);
+  model.add(pose);
 
-  const bodyMat = new THREE.MeshLambertMaterial({ color: bodyColor });
-  const creamMat = new THREE.MeshLambertMaterial({ color: 0xf7ecd9 });
-  const darkMat = new THREE.MeshLambertMaterial({ color: 0x35404d });
+  const skinMat = new THREE.MeshLambertMaterial({ color: 0xe6b48c });
+  const hairMat = new THREE.MeshLambertMaterial({ color: 0x15151d });
+  const teeMat = new THREE.MeshLambertMaterial({ color: 0x23252e });
+  const pantsMat = new THREE.MeshLambertMaterial({ color: 0x191b22 });
+  const shoeMat = new THREE.MeshLambertMaterial({ color: 0xd9d3c6 });
+  const soleMat = new THREE.MeshLambertMaterial({ color: 0x8a8478 });
+  const accentMat = new THREE.MeshLambertMaterial({ color: accent });
 
-  const fuselage = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.2, 5.4), bodyMat);
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.75, 1.6, 10), bodyMat);
-  nose.rotation.x = -Math.PI / 2; nose.position.z = -3.4;
-  const wing = new THREE.Mesh(new THREE.BoxGeometry(11.5, 0.16, 2), creamMat);
-  wing.position.set(0, 0.45, -0.3);
-  const tailWing = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.13, 1.1), creamMat);
-  tailWing.position.set(0, 0.35, 2.4);
-  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.5, 1.2), creamMat);
-  fin.position.set(0, 1, 2.4);
-  const cockpit = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 8), darkMat);
-  cockpit.position.set(0, 0.75, -1);
-  const prop = new THREE.Group();
-  const blade1 = new THREE.Mesh(new THREE.BoxGeometry(0.18, 3, 0.1), darkMat);
-  const blade2 = new THREE.Mesh(new THREE.BoxGeometry(3, 0.18, 0.1), darkMat);
-  prop.add(blade1, blade2);
-  prop.position.z = -4.3;
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.75, 0.8), teeMat);
+  const hem = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.35, 0.92), teeMat);
+  hem.position.y = -0.82;
 
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.34, 1.24, 0.8), creamMat);
-  stripe.position.z = 1.1;
-  const tipL = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.18, 2.02), bodyMat);
-  tipL.position.set(-5.5, 0.45, -0.3);
-  const tipR = tipL.clone();
-  tipR.position.x = 5.5;
-  const spinner = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.7, 10), bodyMat);
-  spinner.rotation.x = -Math.PI / 2; spinner.position.z = -4.55;
-  const propDisc = new THREE.Mesh(new THREE.CircleGeometry(1.55, 24),
-    new THREE.MeshBasicMaterial({ color: 0xbfc9d4, transparent: true, opacity: 0.09,
-      side: THREE.DoubleSide, depthWrite: false }));
-  propDisc.position.z = -4.32;
-  for (const sx of [-1, 1]) {
-    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.3, 10), darkMat);
-    wheel.rotation.z = Math.PI / 2;
-    wheel.position.set(sx * 1.1, -1.05, -1.2);
-    const strut = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.9, 0.16), darkMat);
-    strut.position.set(sx * 0.85, -0.6, -1.2);
-    model.add(wheel, strut);
-  }
-  model.add(fuselage, nose, wing, tailWing, fin, cockpit, prop, stripe, tipL, tipR, spinner, propDisc);
-  model.traverse(o => { if (o.isMesh && o !== propDisc) o.castShadow = true; });
-  const navGeo = new THREE.SphereGeometry(0.16, 6, 5);
-  const navL = new THREE.Mesh(navGeo, navMats.red); navL.position.set(-5.75, 0.5, -0.3);
-  const navR = new THREE.Mesh(navGeo, navMats.green); navR.position.set(5.75, 0.5, -0.3);
-  const navT = new THREE.Mesh(navGeo, navMats.strobe); navT.position.set(0, 1.9, 2.4);
-  model.add(navL, navR, navT);
-  return { rig, model, prop, bodyMat };
+  const headG = new THREE.Group();
+  headG.position.set(0, 1.42, 0.22);      // rides a touch above the back when prone
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.44, 12, 10), skinMat);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.48, 12, 10), hairMat);
+  hair.position.set(0, 0.1, 0.1);
+  hair.scale.set(1.02, 0.94, 1);
+  const fringe = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.28, 0.26), hairMat);
+  fringe.position.set(0, 0.32, -0.32);
+  fringe.rotation.x = 0.35;
+  headG.add(head, hair, fringe);
+  headG.rotation.x = 0.8;                 // eyes on the horizon, not the ground
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.19, 0.3, 8), skinMat);
+  neck.position.y = 1.02;
+  const pendant = new THREE.Mesh(new THREE.OctahedronGeometry(0.09), accentMat);
+  pendant.position.set(0, 0.58, -0.45);
+
+  const mkArm = side => {
+    const sh = new THREE.Group();
+    sh.position.set(side * 0.85, 0.62, 0);
+    const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.75, 0.55), teeMat);
+    sleeve.position.y = -0.3;
+    const fore = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.05, 0.3), skinMat);
+    fore.position.y = -1.12;
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.16, 0.36), accentMat);
+    band.position.y = -1.5;
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.32, 0.3), skinMat);
+    hand.position.y = -1.76;
+    sh.add(sleeve, fore, band, hand);
+    sh.rotation.z = side * 0.55;          // flared out from the body
+    sh.rotation.x = -0.3;                 // swept back, riding just above the body line
+    return sh;
+  };
+  const mkLeg = side => {
+    const hip = new THREE.Group();
+    hip.position.set(side * 0.4, -0.95, 0);
+    const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.58, 1.15, 0.62), pantsMat);
+    thigh.position.y = -0.5;
+    const calf = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.05, 0.54), pantsMat);
+    calf.position.y = -1.5;
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.92), shoeMat);
+    shoe.position.set(0, -2.12, -0.14);
+    const sole = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.1, 0.96), soleMat);
+    sole.position.set(0, -2.3, -0.14);
+    hip.add(thigh, calf, shoe, sole);
+    hip.rotation.x = -0.08;
+    return hip;
+  };
+  const armL = mkArm(-1), armR = mkArm(1);
+  const legL = mkLeg(-1), legR = mkLeg(1);
+  pose.add(torso, hem, neck, headG, pendant, armL, armR, legL, legR);
+  model.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return { rig, model, bodyMat: accentMat, armL, armR, legL, legR };
+}
+// living pose — arms ride the wind, legs give slow lazy kicks, boost tucks in
+function flyerPose(f, t, phase, boostK) {
+  const flare = 0.55 - boostK * 0.38;
+  f.armL.rotation.z = -flare + Math.sin(t * 1.4 + phase) * 0.07;
+  f.armR.rotation.z = flare - Math.sin(t * 1.4 + phase + 0.9) * 0.07;
+  f.armL.rotation.x = f.armR.rotation.x = -0.3 + boostK * 0.15;
+  f.legL.rotation.x = -0.08 + Math.sin(t * 1.15 + phase) * 0.09;
+  f.legR.rotation.x = -0.08 + Math.sin(t * 1.15 + phase + Math.PI) * 0.09;
 }
 const PLANE_COLS = [0xe8654f, 0x4fa3e8, 0x7ac97a, 0xf2c14e, 0xc79bf2, 0xff8fa3, 0x6fd9c8, 0xffa94d];
-const { rig, model, prop, bodyMat: myBodyMat } = buildPlane(PLANE_COLS[0]);
+const me = buildFlyer(PLANE_COLS[0]);
+const { rig, model } = me, myBodyMat = me.bodyMat;
 scene.add(rig);
 
 // ---------------- A distant airliner crossing the night ----------------
@@ -974,13 +1015,29 @@ function trailPush(tr, p) {
   pos.needsUpdate = true;
 }
 function planeTrails(mdl, trL, trR) {
-  trailPush(trL, trailTmp.set(-5.6, 0.45, -0.3).applyMatrix4(mdl.matrixWorld));
-  trailPush(trR, trailTmp.set(5.6, 0.45, -0.3).applyMatrix4(mdl.matrixWorld));
+  // streams off the fingertips
+  trailPush(trL, trailTmp.set(-2.0, 0.6, 0.95).applyMatrix4(mdl.matrixWorld));
+  trailPush(trR, trailTmp.set(2.0, 0.6, 0.95).applyMatrix4(mdl.matrixWorld));
 }
 const trailL = makeTrail(0xfff2e4), trailR = makeTrail(0xfff2e4);
 let trailAcc = 0;
 
 const state = { pos: new THREE.Vector3(0, 70, 0), yaw: 0, pitch: 0, roll: 0 };
+let boostAmt = 0;
+
+// free-look camera — flying steers the body, this swings your eyes around it
+const camDrag = { yaw: 0, pitch: 0, mouse: false, lx: 0, ly: 0 };
+renderer.domElement.addEventListener('mousedown', e => {
+  if (!flying) return;
+  camDrag.mouse = true; camDrag.lx = e.clientX; camDrag.ly = e.clientY;
+});
+addEventListener('mousemove', e => {
+  if (!camDrag.mouse) return;
+  camDrag.yaw -= (e.clientX - camDrag.lx) * 0.0055;
+  camDrag.pitch = Math.max(-0.9, Math.min(1.15, camDrag.pitch + (e.clientY - camDrag.ly) * 0.0038));
+  camDrag.lx = e.clientX; camDrag.ly = e.clientY;
+});
+addEventListener('mouseup', () => camDrag.mouse = false);
 
 // ---------------- Input: keyboard ----------------
 const keys = {};
@@ -996,24 +1053,29 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => keys[e.code] = false);
 
 // ---------------- Input: touch (joystick + boost) ----------------
+// left half of the screen flies, right half looks around — both at once works
 const touchInput = { x: 0, y: 0, boost: false };
 const joyEl = document.getElementById('joy');
 const joyKnob = document.getElementById('joyKnob');
 const boostBtn = document.getElementById('boostBtn');
 let joyId = null, joyBaseX = 0, joyBaseY = 0;
+let lookId = null, lookX = 0, lookY = 0;
 const JOY_R = 55;
 
 renderer.domElement.addEventListener('touchstart', e => {
   e.preventDefault();
   if (!flying) return;
   for (const t of e.changedTouches) {
-    if (joyId === null) {
+    if (joyId === null && t.clientX < innerWidth * 0.5) {
       joyId = t.identifier;
       joyBaseX = t.clientX; joyBaseY = t.clientY;
       joyEl.style.display = 'block';
       joyEl.style.left = joyBaseX + 'px';
       joyEl.style.top = joyBaseY + 'px';
       joyKnob.style.transform = 'translate(-50%,-50%)';
+    } else if (lookId === null && t.clientX >= innerWidth * 0.5) {
+      lookId = t.identifier;
+      lookX = t.clientX; lookY = t.clientY;
     }
   }
 }, { passive: false });
@@ -1025,6 +1087,10 @@ renderer.domElement.addEventListener('touchmove', e => {
       const dy = Math.max(-1, Math.min(1, (t.clientY - joyBaseY) / JOY_R));
       touchInput.x = dx; touchInput.y = dy;
       joyKnob.style.transform = `translate(calc(-50% + ${dx * JOY_R * 0.6}px), calc(-50% + ${dy * JOY_R * 0.6}px))`;
+    } else if (t.identifier === lookId) {
+      camDrag.yaw -= (t.clientX - lookX) * 0.007;
+      camDrag.pitch = Math.max(-0.9, Math.min(1.15, camDrag.pitch + (t.clientY - lookY) * 0.005));
+      lookX = t.clientX; lookY = t.clientY;
     }
   }
 }, { passive: false });
@@ -1034,6 +1100,8 @@ function endTouch(e) {
       joyId = null;
       touchInput.x = touchInput.y = 0;
       joyEl.style.display = 'none';
+    } else if (t.identifier === lookId) {
+      lookId = null;
     }
   }
 }
@@ -1235,8 +1303,8 @@ const joinInput = document.getElementById('joinCode');
 let flying = false;
 
 hint.innerHTML = isTouch
-  ? 'Drag anywhere to steer · hold 🚀 to boost'
-  : '← → steer &nbsp;·&nbsp; ↑ ↓ climb / dive &nbsp;·&nbsp; Shift — glide faster<br>1–5 change sky &nbsp;·&nbsp; M — sound on/off';
+  ? 'Left thumb — fly · right thumb — look around · hold 🚀 to boost'
+  : '← → steer &nbsp;·&nbsp; ↑ ↓ climb / dive &nbsp;·&nbsp; Shift — glide faster &nbsp;·&nbsp; drag mouse — look around<br>1–5 change sky &nbsp;·&nbsp; M — sound on/off';
 
 nameInput.value = localStorage.getItem('skydrift-name') || '';
 
@@ -1321,13 +1389,21 @@ function makeLabel(text) {
 
 function addPlayer(id, name) {
   if (players.has(id) || players.size >= MAX_PLAYERS - 1) return;
-  const plane = buildPlane(colorOf(id));
+  const col = colorOf(id);
+  const plane = buildFlyer(col);
   plane.rig.add(makeLabel(name || 'pilot'));
   scene.add(plane.rig);
+  const tag = document.createElement('div');
+  tag.className = 'buddy';
+  tag.style.color = '#' + col.toString(16).padStart(6, '0');
+  tag.innerHTML = '<span class="arr">➤</span><span class="txt"></span>';
+  tag.style.display = 'none';
+  document.getElementById('buddies').appendChild(tag);
   const p = {
     plane, name: name || 'pilot', phase: (hashId(id) % 628) / 100, lastSeen: performance.now(),
     target: { pos: state.pos.clone().add(new THREE.Vector3(12, 0, 0)), yaw: state.yaw, pitch: 0, roll: 0 },
-    trailL: makeTrail(0xd9ecff, 44), trailR: makeTrail(0xd9ecff, 44)
+    trailL: makeTrail(col, 44), trailR: makeTrail(col, 44),
+    tag, tagArr: tag.firstChild, tagTxt: tag.lastChild
   };
   plane.rig.position.copy(p.target.pos);
   players.set(id, p);
@@ -1337,7 +1413,32 @@ function removePlayer(id) {
   if (!p) return;
   scene.remove(p.plane.rig);
   scene.remove(p.trailL.mesh); scene.remove(p.trailR.mesh);
+  p.tag.remove();
   players.delete(id);
+}
+
+// so friends are never lost: an edge arrow with name + distance whenever a
+// buddy is off-screen (or too far to spot), pointing the way to them
+const buddyV = new THREE.Vector3();
+function updateBuddyTag(p, r) {
+  buddyV.copy(r.position).project(camera);
+  let nx = buddyV.x, ny = buddyV.y;
+  const behind = buddyV.z > 1;
+  if (behind) { nx = -nx; ny = -ny; }
+  const off = behind || Math.abs(nx) > 0.92 || Math.abs(ny) > 0.86;
+  const dist = Math.round(r.position.distanceTo(state.pos));
+  if (!off && dist < 260) { p.tag.style.display = 'none'; return; }
+  if (off) {  // push to the screen edge along the same direction
+    const s = Math.max(Math.abs(nx) / 0.88, Math.abs(ny) / 0.8, 0.0001);
+    nx /= s; ny /= s;
+  }
+  const px = (nx * 0.5 + 0.5) * innerWidth;
+  const py = (-ny * 0.5 + 0.5) * innerHeight;
+  p.tag.style.display = 'flex';
+  p.tag.style.transform = `translate(${px.toFixed(0)}px, ${py.toFixed(0)}px) translate(-50%,-50%)`;
+  p.tagArr.style.display = off ? '' : 'none';
+  if (off) p.tagArr.style.transform = `rotate(${Math.atan2(-ny, nx).toFixed(3)}rad)`;
+  p.tagTxt.textContent = `${p.name} · ${dist >= 1000 ? (dist / 1000).toFixed(1) + ' km' : dist + ' m'}`;
 }
 
 function applyRemoteState(id, d) {
@@ -1384,7 +1485,7 @@ function onNetMessage(topic, payload) {
   if (isNew) {
     addPlayer(id, d.n);
     if (!players.has(id)) return;   // room already full
-    showToast(`${d.n || 'A pilot'} joined ✈️`);
+    showToast(`${d.n || 'A pilot'} joined 🕊️`);
   }
   applyRemoteState(id, d);
   if (isNew) {
@@ -1420,7 +1521,7 @@ function showHostLink() {
   if (navigator.share) {
     const shareBtn = document.createElement('button');
     shareBtn.textContent = 'Share…';
-    shareBtn.onclick = () => navigator.share({ title: 'Sky Drift', text: 'Come fly with me ✈️', url: roomLink() }).catch(() => {});
+    shareBtn.onclick = () => navigator.share({ title: 'Sky Drift', text: 'Come fly with me 🕊️', url: roomLink() }).catch(() => {});
     btns.appendChild(shareBtn);
   }
   mpStatus.append(line, linkEl, btns);
@@ -1461,10 +1562,10 @@ function connectRoom(code, asHost, attempt = 0) {
       netPublishState();               // announce myself right away
       if (asHost) {
         showHostLink();
-        document.getElementById('soloBtn').textContent = `Take off ✈️ (room ${roomCode})`;
+        document.getElementById('soloBtn').textContent = `Take off 🕊️ (room ${roomCode})`;
       } else {
         mpStatus.textContent = '';
-        showToast('✈️✈️ You joined the sky!');
+        showToast('🕊️🕊️ You joined the sky!');
         startFlight();
       }
     });
@@ -1516,7 +1617,7 @@ const urlRoom = (new URLSearchParams(location.search).get('room') || '').trim().
 if (urlRoom) {
   joinInput.value = urlRoom;
   const solo = document.getElementById('soloBtn');
-  solo.textContent = `Join the flight ✈️ (room ${urlRoom})`;
+  solo.textContent = `Join the flight 🕊️ (room ${urlRoom})`;
   solo.onclick = () => joinFlight(urlRoom);
   document.getElementById('hostBtn').style.display = 'none';
   mpStatus.textContent = 'You\'ve been invited to a shared sky — pick a name and hop in!';
@@ -1556,15 +1657,25 @@ function updateFlight(dt, t) {
   rig.position.copy(state.pos);
   rig.rotation.set(state.pitch, state.yaw, state.roll);
   model.position.y = Math.sin(t * 1.6) * 0.25;
-  prop.rotation.z += dt * 45;
+  boostAmt += ((boost ? 1 : 0) - boostAmt) * Math.min(1, dt * 4);
+  flyerPose(me, t, 0, boostAmt);
 
-  // chase camera
-  const back = new THREE.Vector3(0, 4.5, 14).applyEuler(new THREE.Euler(state.pitch * 0.5, state.yaw, 0, 'YXZ'));
+  // chase camera + free look: drag offsets orbit around the wanderer,
+  // then ease back behind the shoulders once released
+  const looking = camDrag.mouse || lookId !== null;
+  if (!looking) {
+    const ease = 1 - Math.exp(-dt * 2.2);
+    camDrag.yaw -= camDrag.yaw * ease;
+    camDrag.pitch -= camDrag.pitch * ease;
+  }
+  const back = new THREE.Vector3(0, 3.4, 10.5)
+    .applyEuler(new THREE.Euler(state.pitch * 0.5 + camDrag.pitch, state.yaw + camDrag.yaw, 0, 'YXZ'));
   camTarget.copy(state.pos).add(back);
-  camera.position.lerp(camTarget, 1 - Math.exp(-dt * 3.2));
-  const lookAt = state.pos.clone().addScaledVector(FWD, 12);
+  camera.position.lerp(camTarget, 1 - Math.exp(-dt * (looking ? 9 : 3.2)));
+  const orbit = Math.min(1, (Math.abs(camDrag.yaw) + Math.abs(camDrag.pitch)) * 2.5);
+  const lookAt = state.pos.clone().addScaledVector(FWD, 10 * (1 - orbit));
   camera.lookAt(lookAt);
-  camera.rotateZ(-state.roll * 0.35);
+  camera.rotateZ(-state.roll * 0.35 * (1 - orbit));
 
   // speed rush — widen the view while boosting
   const targetFov = boost ? 74 : 65;
@@ -1660,7 +1771,7 @@ renderer.setAnimationLoop(() => {
     rig.position.copy(state.pos);
     camera.position.set(state.pos.x + 10, state.pos.y + 4, state.pos.z + 16);
     camera.lookAt(state.pos);
-    prop.rotation.z += dt * 30;
+    flyerPose(me, t, 0, 0);
   }
 
   // ----- multiplayer sync -----
@@ -1677,7 +1788,8 @@ renderer.setAnimationLoop(() => {
     r.rotation.y += (p.target.yaw - r.rotation.y) * k;
     r.rotation.z += (p.target.roll - r.rotation.z) * k;
     p.plane.model.position.y = Math.sin(t * 1.6 + p.phase) * 0.25;
-    p.plane.prop.rotation.z += dt * 45;
+    flyerPose(p.plane, t, p.phase, 0);
+    updateBuddyTag(p, r);
   }
   trailAcc += dt;
   if (trailAcc >= 0.045) {
@@ -1831,11 +1943,14 @@ renderer.setAnimationLoop(() => {
     let extra = '';
     if (players.size > 0) extra = `<br>👥 ${players.size + 1} flying together`;
     else if (joined && roomCode) extra = `<br>🔑 room ${roomCode} — share the link!`;
-    statsEl.innerHTML = `⛰️ ${Math.round(state.pos.y)} m<br>✈️ ${boosting ? 55 : 26} m/s${extra}`;
+    statsEl.innerHTML = `⛰️ ${Math.round(state.pos.y)} m<br>💨 ${boosting ? 55 : 26} m/s${extra}`;
   }
 
   renderer.render(scene, camera);
 });
+
+// tiny debug handle for automated tests
+window.__sky = { camDrag, touchInput, players, state };
 </script>
 </body>
 </html>
