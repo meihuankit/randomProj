@@ -124,7 +124,8 @@ addEventListener('error', () => {
 <body>
 <div id="overlay">
   <h1>SKY DRIFT 🌙</h1>
-  <div class="sub">Just you, the wind, and endless calm skies. Nowhere to be.<br>
+  <div class="sub">A moonlit countryside, and nowhere to be. Catch the drifting lanterns,
+  carry their wishes to the glowing tree.<br>
   Fly alone, or share your sky — friends join with just a link.</div>
   <div class="mp">
     <div class="row">
@@ -157,21 +158,21 @@ const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in win
 
 // ---------------- Scenes (moods) ----------------
 const SCENES = [
-  { name: '🌙 Moonlit Night', top: 0x1c2b60, bottom: 0x0a1030, fog: 0x0d1436, fogNear: 160, fogFar: 950,
-    ground: 0x0b1c3a, cloud: 0x3b4878, cloudOp: .8, stars: .9, orb: 1, orbCol: 0xf8f4d8, orbPos: [260, 340, -700], orbScale: 1,
-    hemi: .45, hemiCol: 0x93a7e0, dir: .55, dirCol: 0xcdd9ff, city: 0, aurora: 1, moonTex: 1 },
+  { name: '🌙 Moonlit Night', top: 0x233670, bottom: 0x0c1338, fog: 0x182050, fogNear: 170, fogFar: 1050,
+    ground: 0x3d4f86, cloud: 0x4a5a94, cloudOp: .8, stars: .9, orb: 1, orbCol: 0xf8f4d8, orbPos: [260, 340, -700], orbScale: 1.12,
+    hemi: .62, hemiCol: 0x9db0e8, dir: .95, dirCol: 0xd6e0ff, city: 0, aurora: 1, moonTex: 1 },
   { name: '🌃 City Lights', top: 0x191632, bottom: 0x0b0a18, fog: 0x100e22, fogNear: 120, fogFar: 800,
     ground: 0x07070f, cloud: 0x262038, cloudOp: .55, stars: .5, orb: .6, orbCol: 0xe8e4c8, orbPos: [-380, 380, -600], orbScale: .55,
-    hemi: .4, hemiCol: 0x7a74b8, dir: .35, dirCol: 0xaab, city: 1, moonTex: .55 },
+    hemi: .4, hemiCol: 0x7a74b8, dir: .35, dirCol: 0xaab, city: 1, moonTex: .55, locked: 1 },
   { name: '🌅 Golden Sunset', top: 0xff9e5e, bottom: 0xffc98a, fog: 0xffb98a, fogNear: 130, fogFar: 850,
     ground: 0xc96f4a, cloud: 0xffd9c4, cloudOp: .9, stars: 0, orb: 1, orbCol: 0xffe0b0, orbPos: [0, 90, -900], orbScale: 1.5,
-    hemi: .75, hemiCol: 0xffcf9e, dir: .8, dirCol: 0xffb37a, city: 0 },
+    hemi: .75, hemiCol: 0xffcf9e, dir: .8, dirCol: 0xffb37a, city: 0, locked: 1 },
   { name: '☁️ Blue Day', top: 0x6fb9e8, bottom: 0xcfeaf7, fog: 0xd4ecf8, fogNear: 180, fogFar: 1100,
     ground: 0x5b9e6e, cloud: 0xffffff, cloudOp: .95, stars: 0, orb: .9, orbCol: 0xfff6d8, orbPos: [320, 420, -450], orbScale: .8,
-    hemi: 1, hemiCol: 0xeaf6ff, dir: 1.1, dirCol: 0xfff2d8, city: 0 },
+    hemi: 1, hemiCol: 0xeaf6ff, dir: 1.1, dirCol: 0xfff2d8, city: 0, locked: 1 },
   { name: '🌊 Ocean Isles', top: 0x4fa8e0, bottom: 0xc2e8f7, fog: 0xcfeaf5, fogNear: 170, fogFar: 1000,
     ground: 0xc9b98a, cloud: 0xffffff, cloudOp: .9, stars: 0, orb: 1, orbCol: 0xfff2cc, orbPos: [300, 380, -520], orbScale: .9,
-    hemi: .95, hemiCol: 0xeaf8ff, dir: 1.15, dirCol: 0xfff4da, city: 0, ocean: 1 }
+    hemi: .95, hemiCol: 0xeaf8ff, dir: 1.15, dirCol: 0xfff4da, city: 0, ocean: 1, locked: 1 }
 ];
 let target = SCENES[0];
 
@@ -399,6 +400,22 @@ function terrainH(x, z) {
   const n = nSmooth(x * 0.004, z * 0.004) + nSmooth(x * 0.011 + 13.7, z * 0.011 + 91.3) * 0.35;
   return (n - 0.55) * 26 * hillScale;
 }
+// countryside patchwork — every field its own moonlit shade, hedgerows between
+const FIELD = 150;
+const FIELD_PALS = [
+  [.82, .98, .9], [1.0, 1.06, .96], [.88, .94, 1.12], [1.12, 1.02, .84],
+  [.78, .9, 1.06], [1.04, 1.12, 1.0], [.94, 1.0, .88], [1.08, .96, 1.08]
+];
+function fieldTint(x, z, out) {
+  const fx = Math.floor(x / FIELD), fz = Math.floor(z / FIELD);
+  const r = mulberry32(fx * 73856093 ^ fz * 19349663 ^ 0x99)();
+  const p = FIELD_PALS[Math.floor(r * FIELD_PALS.length)];
+  const ex = Math.abs(x / FIELD - Math.round(x / FIELD));
+  const ez = Math.abs(z / FIELD - Math.round(z / FIELD));
+  const edge = Math.min(ex, ez) < 0.04 ? 0.68 : 1;   // hedgerow shadow lines
+  out[0] = p[0] * edge; out[1] = p[1] * edge; out[2] = p[2] * edge;
+}
+const ftTmp = [1, 1, 1];
 let gCX = Infinity, gCZ = Infinity, gHS = -1;
 function updateGround(px, pz) {
   hillScale = Math.max(0, 1 - cur.city - cur.ocean);
@@ -408,16 +425,19 @@ function updateGround(px, pz) {
   ground.position.set(cx, 0, cz);
   const pos = groundGeo.attributes.position, col = groundGeo.attributes.color;
   for (let i = 0; i < pos.count; i++) {
-    const h = terrainH(pos.getX(i) + cx, pos.getZ(i) + cz);
+    const wx = pos.getX(i) + cx, wz = pos.getZ(i) + cz;
+    const h = terrainH(wx, wz);
     pos.setY(i, h);
     const tint = 0.8 + (h / 26 + 0.55) * 0.35;   // valleys darker, hilltops brighter
-    col.setXYZ(i, tint, tint, tint);
+    fieldTint(wx, wz, ftTmp);
+    col.setXYZ(i, tint * ftTmp[0], tint * ftTmp[1], tint * ftTmp[2]);
   }
   pos.needsUpdate = true; col.needsUpdate = true;
   groundGeo.computeVertexNormals();
   updateTrees(cx, cz);
   updateVillages(cx, cz);
   updateLakes(cx, cz);
+  updateFireflies(cx, cz);
 }
 
 // ---------------- Trees on the hills ----------------
@@ -482,9 +502,24 @@ const vilMat = new THREE.ShaderMaterial({
 const villages = new THREE.Points(vilGeo, vilMat);
 villages.frustumCulled = false;
 scene.add(villages);
+
+// farmhouses under the window lights — one merged hip-roof shape, instanced
+const HOUSE_N = 46;
+const houseGeo = (() => {
+  const walls = new THREE.BoxGeometry(6.4, 4, 7.5).translate(0, 2, 0);
+  const roof = new THREE.ConeGeometry(5.6, 3.4, 4).rotateY(Math.PI / 4).translate(0, 5.6, 0);
+  return BufferGeometryUtils.mergeGeometries([walls.toNonIndexed(), roof.toNonIndexed()]);
+})();
+const houseMat = new THREE.MeshLambertMaterial({ color: 0x4d5570, emissive: 0x090b16 });
+const houseMesh = new THREE.InstancedMesh(houseGeo, houseMat, HOUSE_N);
+houseMesh.castShadow = houseMesh.receiveShadow = true;
+scene.add(houseMesh);
+const housePos = new THREE.Vector3(), houseQuat = new THREE.Quaternion(), houseScl = new THREE.Vector3();
+const houseAxis = new THREE.Vector3(0, 1, 0);
+
 function updateVillages(cx, cz) {
   const pos = vilGeo.attributes.position, pha = vilGeo.attributes.aPhase;
-  let n = 0;
+  let n = 0, hn = 0;
   const CELL = 210, rr = Math.ceil(880 / CELL);
   const ci = Math.round(cx / CELL), cj = Math.round(cz / CELL);
   for (let dj = -rr; dj <= rr && n < VIL_N; dj++) for (let di = -rr; di <= rr && n < VIL_N; di++) {
@@ -500,16 +535,85 @@ function updateVillages(cx, cz) {
       pha.setX(n, rnd() * 100);
       n++;
     }
+    for (let k = 0, hh = 1 + Math.floor(rnd() * 2); k < hh && hn < HOUSE_N; k++) {
+      const hx = vx + (rnd() - .5) * 60, hz = vz + (rnd() - .5) * 60;
+      const s = 0.8 + rnd() * 0.5;
+      housePos.set(hx, terrainH(hx, hz) - 0.3, hz);
+      houseQuat.setFromAxisAngle(houseAxis, rnd() * Math.PI * 2);
+      houseScl.setScalar(s);
+      houseMesh.setMatrixAt(hn, treeMat4.compose(housePos, houseQuat, houseScl));
+      hn++;
+    }
   }
+  for (; hn < HOUSE_N; hn++) {
+    houseMesh.setMatrixAt(hn, treeMat4.compose(housePos.set(0, -90, 0), houseQuat, houseScl.setScalar(0.001)));
+  }
+  houseMesh.instanceMatrix.needsUpdate = true;
+  houseMesh.visible = hillScale > 0.4;
   vilGeo.setDrawRange(0, n);
   pos.needsUpdate = true; pha.needsUpdate = true;
 }
 
+// fireflies drifting over the meadows
+const FLY_N = 240;
+const flyGeo = new THREE.BufferGeometry();
+flyGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(FLY_N * 3), 3));
+flyGeo.setAttribute('aPhase', new THREE.BufferAttribute(new Float32Array(FLY_N), 1));
+const flyMat = new THREE.ShaderMaterial({
+  uniforms: { time: { value: 0 }, globalOp: { value: 0 } },
+  vertexShader: `attribute float aPhase; uniform float time; varying float vA;
+    void main() {
+      vec3 p = position;
+      p.x += sin(time * 0.5 + aPhase * 21.0) * 3.0;
+      p.y += sin(time * 0.8 + aPhase * 13.0) * 1.6;
+      p.z += cos(time * 0.4 + aPhase * 17.0) * 3.0;
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      vA = (0.35 + 0.65 * pow(0.5 + 0.5 * sin(time * 2.2 + aPhase * 51.0), 2.0))
+         * smoothstep(420.0, 190.0, -mv.z);
+      gl_PointSize = clamp(190.0 / -mv.z, 1.0, 4.0);
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: `uniform float globalOp; varying float vA;
+    void main() {
+      float a = smoothstep(0.5, 0.05, length(gl_PointCoord - 0.5)) * vA * globalOp;
+      gl_FragColor = vec4(0.78, 1.0, 0.55, a);
+    }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+});
+const fireflies = new THREE.Points(flyGeo, flyMat);
+fireflies.frustumCulled = false;
+scene.add(fireflies);
+function updateFireflies(cx, cz) {
+  const pos = flyGeo.attributes.position, pha = flyGeo.attributes.aPhase;
+  for (let i = 0; i < FLY_N; i++) {
+    const a = Math.random() * Math.PI * 2, r = 40 + Math.random() * 360;
+    const x = cx + Math.sin(a) * r, z = cz + Math.cos(a) * r;
+    pos.setXYZ(i, x, terrainH(x, z) + 2 + Math.random() * 7, z);
+    pha.setX(i, Math.random() * 100);
+  }
+  pos.needsUpdate = true; pha.needsUpdate = true;
+}
+
+// low mist pooling in the hollows
+const mists = [];
+{
+  const mistMat = new THREE.SpriteMaterial({ map: radialTexture(), color: 0xaebaf0,
+    transparent: true, opacity: 0, depthWrite: false });
+  for (let i = 0; i < 8; i++) {
+    const m = new THREE.Sprite(mistMat.clone());
+    m.scale.set(150 + Math.random() * 90, 34 + Math.random() * 16, 1);
+    m.position.set((Math.random() - .5) * 900, 0, (Math.random() - .5) * 900);
+    m.userData.drift = 0.4 + Math.random() * 0.8;
+    mists.push(m);
+    scene.add(m);
+  }
+}
+
 // ---------------- Moonlit lakes in the valley floors ----------------
-const LAKE_N = 24;
-const lakeDayCol = new THREE.Color(0x2b6f9e), lakeNightCol = new THREE.Color(0x0e1e3c);
-const lakeMat = new THREE.MeshPhongMaterial({ color: 0x16324f, specular: 0xcfe4ff, shininess: 150,
-  transparent: true, opacity: 0.88 });
+const LAKE_N = 30;
+const lakeDayCol = new THREE.Color(0x2b6f9e), lakeNightCol = new THREE.Color(0x1c3560);
+const lakeMat = new THREE.MeshPhongMaterial({ color: 0x16324f, specular: 0xf0f6ff, shininess: 240,
+  emissive: 0x060c1e, transparent: true, opacity: 0.92 });
 const lakeMesh = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 28).rotateX(-Math.PI / 2), lakeMat, LAKE_N);
 lakeMesh.receiveShadow = true;
 scene.add(lakeMesh);
@@ -525,8 +629,8 @@ function updateLakes(cx, cz) {
     const lx = (ci + di) * CELL + (rnd() - .5) * CELL * 0.5;
     const lz = (cj + dj) * CELL + (rnd() - .5) * CELL * 0.5;
     const h = terrainH(lx, lz);
-    if (h > -6) continue;                             // only the deepest hollows hold water
-    const s = 16 + rnd() * 20;
+    if (h > -5) continue;                             // the hollows hold water
+    const s = 22 + rnd() * 26;
     lakeMesh.setMatrixAt(n, treeMat4.makeScale(s, 1, s).setPosition(lx, h + 1.6, lz));
     n++;
   }
@@ -883,13 +987,17 @@ function buildFlyer(accent) {
   pose.scale.setScalar(1.15);
   model.add(pose);
 
-  const skinMat = new THREE.MeshLambertMaterial({ color: 0xe6b48c });
-  const hairMat = new THREE.MeshLambertMaterial({ color: 0x15151d });
-  const teeMat = new THREE.MeshLambertMaterial({ color: 0x23252e });
-  const pantsMat = new THREE.MeshLambertMaterial({ color: 0x191b22 });
-  const shoeMat = new THREE.MeshLambertMaterial({ color: 0xd9d3c6 });
-  const soleMat = new THREE.MeshLambertMaterial({ color: 0x8a8478 });
-  const accentMat = new THREE.MeshLambertMaterial({ color: accent });
+  // moonlit-readable: the tee carries a deep tint of the player color, accents
+  // glow, and everything gets a whisper of emissive so the silhouette never dies
+  const teeCol = new THREE.Color(accent).multiplyScalar(0.4).lerp(new THREE.Color(0x2a2d3a), 0.35);
+  const skinMat = new THREE.MeshLambertMaterial({ color: 0xe6b48c, emissive: 0x33241a });
+  const hairMat = new THREE.MeshLambertMaterial({ color: 0x1a1a26, emissive: 0x0b0b14 });
+  const teeMat = new THREE.MeshLambertMaterial({ color: teeCol, emissive: teeCol.clone().multiplyScalar(0.35) });
+  const pantsMat = new THREE.MeshLambertMaterial({ color: 0x262a3a, emissive: 0x0a0c16 });
+  const shoeMat = new THREE.MeshLambertMaterial({ color: 0xd9d3c6, emissive: 0x2e2c26 });
+  const soleMat = new THREE.MeshLambertMaterial({ color: 0x8a8478, emissive: 0x1c1a16 });
+  const accentMat = new THREE.MeshLambertMaterial({ color: accent,
+    emissive: new THREE.Color(accent).multiplyScalar(0.75) });
 
   const torso = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.75, 0.8), teeMat);
   const hem = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.35, 0.92), teeMat);
@@ -946,16 +1054,26 @@ function buildFlyer(accent) {
   const legL = mkLeg(-1), legR = mkLeg(1);
   pose.add(torso, hem, neck, headG, pendant, armL, armR, legL, legR);
   model.traverse(o => { if (o.isMesh) o.castShadow = true; });
-  return { rig, model, bodyMat: accentMat, armL, armR, legL, legR };
+  // soft moonlight aura in the player color — grows as they gather wishes
+  const auraMat = new THREE.SpriteMaterial({ map: radialTexture(), color: accent,
+    transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending });
+  const aura = new THREE.Sprite(auraMat);
+  aura.scale.set(8, 8, 1);
+  model.add(aura);
+  return { rig, model, bodyMat: accentMat, armL, armR, legL, legR, hem, fringe, headG, aura };
 }
-// living pose — arms ride the wind, legs give slow lazy kicks, boost tucks in
-function flyerPose(f, t, phase, boostK) {
-  const flare = 0.55 - boostK * 0.38;
+// living pose — arms ride the wind, cloth and hair flutter, dives sweep the
+// arms back, climbs open them wide, boost tucks everything in
+function flyerPose(f, t, phase, boostK, pitch) {
+  const flare = 0.55 - boostK * 0.38 + pitch * 0.35;
   f.armL.rotation.z = -flare + Math.sin(t * 1.4 + phase) * 0.07;
   f.armR.rotation.z = flare - Math.sin(t * 1.4 + phase + 0.9) * 0.07;
-  f.armL.rotation.x = f.armR.rotation.x = -0.3 + boostK * 0.15;
+  f.armL.rotation.x = f.armR.rotation.x = -0.3 + boostK * 0.15 - pitch * 0.4;
   f.legL.rotation.x = -0.08 + Math.sin(t * 1.15 + phase) * 0.09;
   f.legR.rotation.x = -0.08 + Math.sin(t * 1.15 + phase + Math.PI) * 0.09;
+  f.hem.rotation.x = Math.sin(t * (5.4 + boostK * 3) + phase) * (0.05 + boostK * 0.05);
+  f.fringe.rotation.x = 0.35 + Math.sin(t * (4.6 + boostK * 3) + phase * 2) * (0.07 + boostK * 0.07);
+  f.headG.rotation.x = 0.8 + pitch * 0.3 + Math.sin(t * 0.7 + phase) * 0.04;
 }
 const PLANE_COLS = [0xe8654f, 0x4fa3e8, 0x7ac97a, 0xf2c14e, 0xc79bf2, 0xff8fa3, 0x6fd9c8, 0xffa94d];
 const me = buildFlyer(PLANE_COLS[0]);
@@ -1025,6 +1143,12 @@ let trailAcc = 0;
 const state = { pos: new THREE.Vector3(0, 70, 0), yaw: 0, pitch: 0, roll: 0 };
 let boostAmt = 0;
 
+// barrel roll — pure joy, zero stakes (Space / double-tap the look side)
+let rollAnim = 0, rollFx = 0;
+function triggerRoll() {
+  if (flying && rollAnim === 0) rollAnim = 1e-6;
+}
+
 // free-look camera — flying steers the body, this swings your eyes around it
 const camDrag = { yaw: 0, pitch: 0, mouse: false, lx: 0, ly: 0 };
 renderer.domElement.addEventListener('mousedown', e => {
@@ -1049,6 +1173,7 @@ addEventListener('keydown', e => {
     if (SCENES[i]) setScene(i);
   }
   if (e.code === 'KeyM') toggleSound();
+  if (e.code === 'Space') triggerRoll();
 });
 addEventListener('keyup', e => keys[e.code] = false);
 
@@ -1059,7 +1184,7 @@ const joyEl = document.getElementById('joy');
 const joyKnob = document.getElementById('joyKnob');
 const boostBtn = document.getElementById('boostBtn');
 let joyId = null, joyBaseX = 0, joyBaseY = 0;
-let lookId = null, lookX = 0, lookY = 0;
+let lookId = null, lookX = 0, lookY = 0, lastLookTap = 0;
 const JOY_R = 55;
 
 renderer.domElement.addEventListener('touchstart', e => {
@@ -1076,6 +1201,9 @@ renderer.domElement.addEventListener('touchstart', e => {
     } else if (lookId === null && t.clientX >= innerWidth * 0.5) {
       lookId = t.identifier;
       lookX = t.clientX; lookY = t.clientY;
+      const now = performance.now();
+      if (now - lastLookTap < 320) triggerRoll();   // double-tap → barrel roll
+      lastLookTap = now;
     }
   }
 }, { passive: false });
@@ -1208,6 +1336,16 @@ function initAudio() {
       o.start(when); o.stop(when + 3.4);
     }
 
+    // gameplay one-shots: a bright catch-chime, and a rising release arpeggio
+    lanternChime = () => {
+      const m = [76, 81, 84][Math.floor(Math.random() * 3)];
+      pluck(m, AC.currentTime + 0.01, 0.065, (Math.random() - .5) * 0.8);
+    };
+    releaseChord = () => {
+      [57, 64, 69, 72, 76, 81].forEach((m, i) =>
+        pluck(m, AC.currentTime + 0.05 + i * 0.13, 0.055, i % 2 ? 0.5 : -0.5));
+    };
+
     const DAY_CHORDS = [                   // the original gentle daylight progression
       [48, 55, 60, 64],                    // Cmaj
       [45, 52, 60, 64],                    // Am7-ish
@@ -1303,15 +1441,16 @@ const joinInput = document.getElementById('joinCode');
 let flying = false;
 
 hint.innerHTML = isTouch
-  ? 'Left thumb — fly · right thumb — look around · hold 🚀 to boost'
-  : '← → steer &nbsp;·&nbsp; ↑ ↓ climb / dive &nbsp;·&nbsp; Shift — glide faster &nbsp;·&nbsp; drag mouse — look around<br>1–5 change sky &nbsp;·&nbsp; M — sound on/off';
+  ? 'Left thumb — fly · right thumb — look · double-tap right — roll · hold 🚀 boost'
+  : '← → steer &nbsp;·&nbsp; ↑ ↓ climb / dive &nbsp;·&nbsp; Shift — glide faster &nbsp;·&nbsp; Space — barrel roll<br>drag mouse — look around &nbsp;·&nbsp; M — sound on/off';
 
 nameInput.value = localStorage.getItem('skydrift-name') || '';
 
 SCENES.forEach((s, i) => {
   const b = document.createElement('button');
-  b.textContent = isTouch ? s.name.split(' ')[0] : s.name;
-  b.title = s.name;
+  b.textContent = (s.locked ? '🔒 ' : '') + (isTouch ? s.name.split(' ')[0] : s.name);
+  b.title = s.locked ? s.name + ' — under construction' : s.name;
+  if (s.locked) b.style.opacity = '.45';
   b.onclick = () => setScene(i);
   sceneBar.appendChild(b);
 });
@@ -1328,6 +1467,10 @@ function showToast(msg) {
   toastTimer = setTimeout(() => toast.style.opacity = 0, 2200);
 }
 function setScene(i, fromNet) {
+  if (SCENES[i].locked) {
+    if (!fromNet) showToast(`🚧 ${SCENES[i].name} — under construction`);
+    return;
+  }
   target = SCENES[i];
   cityGroup.visible = target.city > 0;
   refreshButtons();
@@ -1352,6 +1495,162 @@ function startFlight() {
     if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
   }
   setTimeout(() => hint.style.opacity = 0.25, 12000);
+  setTimeout(() => { if (wishes === 0 && released === 0) showToast('Catch the drifting lanterns 🏮'); }, 7000);
+}
+
+// ---------------- Night of Wishes — the reason to fly ----------------
+// Paper lanterns rise from the sleeping villages. Catch them and you glow a
+// little brighter; carry the wishes to the great Wishing Tree and set them
+// free in a burst of light petals your friends can see.
+let wishes = 0, released = 0;
+let lanternChime = null, releaseChord = null;   // wired up inside initAudio
+
+// -- the Wishing Tree, a landmark you can always fly home to --
+const TREE_POS = new THREE.Vector3(30, 0, -260);
+TREE_POS.y = terrainH(TREE_POS.x, TREE_POS.z);
+const wishTree = new THREE.Group();
+{
+  const trunkMat = new THREE.MeshLambertMaterial({ color: 0x4a3d52, emissive: 0x14101a });
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 2.6, 22, 8), trunkMat);
+  trunk.position.y = 11;
+  trunk.castShadow = true;
+  const canopyMat = new THREE.MeshLambertMaterial({ color: 0x9fb6e8, emissive: 0x5468b0 });
+  [[0, 26, 0, 9], [-6, 22, 2, 6], [5.5, 21, -2.5, 6.5], [1, 20, 5.5, 5]].forEach(([x, y, z, r]) => {
+    const c = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 9), canopyMat);
+    c.position.set(x, y, z);
+    c.castShadow = true;
+    wishTree.add(c);
+  });
+  const glowT = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(), color: 0xaec4ff,
+    transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }));
+  glowT.scale.set(52, 52, 1);
+  glowT.position.y = 24;
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 6.5, 320, 10, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xbcd0ff, transparent: true, opacity: 0.05, fog: false,
+      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+  beacon.position.y = 160;
+  wishTree.add(trunk, glowT, beacon);
+  wishTree.position.copy(TREE_POS);
+  scene.add(wishTree);
+}
+// twinkling motes in the canopy
+const moteGeo = new THREE.BufferGeometry();
+{
+  const arr = [];
+  for (let i = 0; i < 90; i++) {
+    const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 9;
+    arr.push(Math.sin(a) * r, 19 + Math.random() * 12, Math.cos(a) * r);
+  }
+  moteGeo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+}
+const moteMat = new THREE.PointsMaterial({ color: 0xdfe9ff, size: 2.2, sizeAttenuation: true,
+  map: radialTexture(), transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending });
+const motes = new THREE.Points(moteGeo, moteMat);
+motes.position.copy(TREE_POS);
+scene.add(motes);
+
+// -- drifting lanterns --
+const LANTERNS = [];
+{
+  const paperMat = new THREE.MeshLambertMaterial({ color: 0xffb066, emissive: 0xc76a1e });
+  for (let i = 0; i < 10; i++) {
+    const l = new THREE.Group();
+    const paper = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.65, 1.5, 7), paperMat);
+    const lGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(), color: 0xffb066,
+      transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending }));
+    lGlow.scale.set(7, 7, 1);
+    l.add(paper, lGlow);
+    l.userData = { rise: 0, drift: 0, phase: Math.random() * 6.28, glow: lGlow.material };
+    respawnLantern(l, true);
+    LANTERNS.push(l);
+    scene.add(l);
+  }
+}
+function respawnLantern(l, initial) {
+  const a = Math.random() * Math.PI * 2;
+  const r = initial ? 60 + Math.random() * 300 : 160 + Math.random() * 320;
+  const x = state.pos.x + Math.sin(a) * r, z = state.pos.z + Math.cos(a) * r;
+  l.position.set(x, Math.max(terrainH(x, z) + 14, state.pos.y - 50 + Math.random() * 110), z);
+  l.userData.rise = 1 + Math.random() * 1.4;
+  l.userData.drift = (Math.random() - .5) * 2.4;
+}
+
+// -- light-petal burst at the tree --
+const PETAL_N = 130;
+const petalGeo = new THREE.BufferGeometry();
+petalGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PETAL_N * 3), 3));
+const petalMat = new THREE.PointsMaterial({ color: 0xffd9ec, size: 2.4, sizeAttenuation: true,
+  map: radialTexture(), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+const petals = new THREE.Points(petalGeo, petalMat);
+petals.frustumCulled = false;
+petals.position.copy(TREE_POS);
+scene.add(petals);
+const petalVel = new Float32Array(PETAL_N * 3);
+let petalLife = 0;
+function treeBurst() {
+  const pos = petalGeo.attributes.position;
+  for (let i = 0; i < PETAL_N; i++) {
+    pos.setXYZ(i, 0, 24, 0);
+    const a = Math.random() * Math.PI * 2, up = Math.random();
+    const sp = 6 + Math.random() * 14;
+    petalVel[i * 3] = Math.sin(a) * sp * (1 - up * .5);
+    petalVel[i * 3 + 1] = 4 + up * 14;
+    petalVel[i * 3 + 2] = Math.cos(a) * sp * (1 - up * .5);
+  }
+  pos.needsUpdate = true;
+  petalLife = 3;
+}
+
+function updateWishes(dt, t) {
+  const night = cur.stars > 0.3;
+  wishTree.visible = motes.visible = true;
+  moteMat.opacity = 0.5 + 0.3 * Math.sin(t * 1.7);
+  for (const l of LANTERNS) {
+    l.visible = night;
+    if (!night) continue;
+    l.position.y += l.userData.rise * dt;
+    l.position.x += l.userData.drift * dt;
+    l.rotation.z = Math.sin(t * 0.9 + l.userData.phase) * 0.12;
+    l.userData.glow.opacity = 0.55 + 0.25 * Math.sin(t * 3 + l.userData.phase * 7);
+    const d = l.position.distanceTo(state.pos);
+    if (flying && d < 7.5) {
+      wishes++;
+      if (lanternChime) lanternChime();
+      if (wishes === 1) showToast('🏮 A wish! Bring it to the glowing tree');
+      else if (wishes % 5 === 0) showToast(`🏮 ${wishes} wishes aboard`);
+      respawnLantern(l);
+    } else if (d > 850 || l.position.y > 420) {
+      respawnLantern(l);
+    }
+  }
+  // release at the tree
+  if (flying && wishes > 0 &&
+      Math.hypot(state.pos.x - TREE_POS.x, state.pos.z - TREE_POS.z) < 34 &&
+      state.pos.y - TREE_POS.y < 70) {
+    released += wishes;
+    showToast(`✨ ${wishes} wish${wishes > 1 ? 'es' : ''} set free!`);
+    if (releaseChord) releaseChord();
+    netSendWish(wishes);
+    wishes = 0;
+    treeBurst();
+  }
+  if (petalLife > 0) {
+    petalLife -= dt;
+    const pos = petalGeo.attributes.position;
+    for (let i = 0; i < PETAL_N; i++) {
+      petalVel[i * 3 + 1] -= dt * 3.5;               // drift down like petals
+      pos.setXYZ(i,
+        pos.getX(i) + petalVel[i * 3] * dt,
+        pos.getY(i) + petalVel[i * 3 + 1] * dt,
+        pos.getZ(i) + petalVel[i * 3 + 2] * dt);
+    }
+    pos.needsUpdate = true;
+    petalMat.opacity = Math.min(1, petalLife / 1.2);
+  } else petalMat.opacity = 0;
+
+  // my aura brightens with every wish aboard
+  me.aura.scale.setScalar(8 + Math.min(wishes, 30) * 0.3);
+  me.aura.material.opacity = 0.3 + Math.min(wishes, 20) * 0.02;
 }
 
 // ---------------- Multiplayer — shared sky over a link (MQTT relay over WSS) ----------------
@@ -1441,12 +1740,31 @@ function updateBuddyTag(p, r) {
   p.tagTxt.textContent = `${p.name} · ${dist >= 1000 ? (dist / 1000).toFixed(1) + ' km' : dist + ' m'}`;
 }
 
+// same edge indicator for the Wishing Tree while you're carrying wishes
+const treeTag = { name: '🌳 Wishing Tree' };
+{
+  const tag = document.createElement('div');
+  tag.className = 'buddy';
+  tag.style.color = '#aec4ff';
+  tag.innerHTML = '<span class="arr">➤</span><span class="txt"></span>';
+  tag.style.display = 'none';
+  document.getElementById('buddies').appendChild(tag);
+  treeTag.tag = tag; treeTag.tagArr = tag.firstChild; treeTag.tagTxt = tag.lastChild;
+}
+const treeAnchor = { position: new THREE.Vector3() };
+function updateTreeTag() {
+  if (!flying || wishes === 0) { treeTag.tag.style.display = 'none'; return; }
+  treeAnchor.position.copy(TREE_POS).setY(TREE_POS.y + 24);
+  updateBuddyTag(treeTag, treeAnchor);
+}
+
 function applyRemoteState(id, d) {
   const p = players.get(id);
   if (!p) return;
   p.lastSeen = performance.now();
   p.target.pos.set(d.p[0], d.p[1], d.p[2]);
   p.target.yaw = d.yw; p.target.pitch = d.pt; p.target.roll = d.rl;
+  p.wishes = d.w || 0;
 }
 
 function netSendScene(i) {
@@ -1458,10 +1776,13 @@ function netSendScene(i) {
 function netPublishState() {
   if (!client || !joined) return;
   client.publish(roomTopic() + '/p/' + myId, JSON.stringify({
-    n: myName(),
+    n: myName(), w: wishes,
     p: [+state.pos.x.toFixed(2), +state.pos.y.toFixed(2), +state.pos.z.toFixed(2)],
-    yw: +state.yaw.toFixed(3), pt: +state.pitch.toFixed(3), rl: +state.roll.toFixed(3)
+    yw: +state.yaw.toFixed(3), pt: +state.pitch.toFixed(3), rl: +(state.roll + rollFx).toFixed(3)
   }));
+}
+function netSendWish(n) {
+  if (client && joined) client.publish(roomTopic() + '/p/' + myId, JSON.stringify({ t: 'wish', n }));
 }
 
 function onNetMessage(topic, payload) {
@@ -1478,6 +1799,13 @@ function onNetMessage(topic, payload) {
   if (d.bye) {
     const p = players.get(id);
     if (p) { showToast(`${p.name} flew away 👋`); removePlayer(id); }
+    return;
+  }
+  if (d.t === 'wish') {
+    const p = players.get(id);
+    showToast(`✨ ${p ? p.name : 'A wanderer'} set ${d.n} wish${d.n > 1 ? 'es' : ''} free!`);
+    treeBurst();
+    if (releaseChord) releaseChord();
     return;
   }
   if (!Array.isArray(d.p)) return;
@@ -1656,9 +1984,16 @@ function updateFlight(dt, t) {
 
   rig.position.copy(state.pos);
   rig.rotation.set(state.pitch, state.yaw, state.roll);
+  if (rollAnim > 0) {
+    rollAnim = Math.min(1, rollAnim + dt / 0.85);
+    const ease = rollAnim * rollAnim * (3 - 2 * rollAnim);
+    rollFx = ease * Math.PI * 2;
+    rig.rotation.z = state.roll + rollFx;
+    if (rollAnim >= 1) { rollAnim = 0; rollFx = 0; }
+  }
   model.position.y = Math.sin(t * 1.6) * 0.25;
   boostAmt += ((boost ? 1 : 0) - boostAmt) * Math.min(1, dt * 4);
-  flyerPose(me, t, 0, boostAmt);
+  flyerPose(me, t, 0, boostAmt, state.pitch);
 
   // chase camera + free look: drag offsets orbit around the wanderer,
   // then ease back behind the shoulders once released
@@ -1771,7 +2106,7 @@ renderer.setAnimationLoop(() => {
     rig.position.copy(state.pos);
     camera.position.set(state.pos.x + 10, state.pos.y + 4, state.pos.z + 16);
     camera.lookAt(state.pos);
-    flyerPose(me, t, 0, 0);
+    flyerPose(me, t, 0, 0, 0);
   }
 
   // ----- multiplayer sync -----
@@ -1788,9 +2123,13 @@ renderer.setAnimationLoop(() => {
     r.rotation.y += (p.target.yaw - r.rotation.y) * k;
     r.rotation.z += (p.target.roll - r.rotation.z) * k;
     p.plane.model.position.y = Math.sin(t * 1.6 + p.phase) * 0.25;
-    flyerPose(p.plane, t, p.phase, 0);
+    flyerPose(p.plane, t, p.phase, 0, p.target.pitch);
+    p.plane.aura.scale.setScalar(8 + Math.min(p.wishes || 0, 30) * 0.3);
+    p.plane.aura.material.opacity = 0.3 + Math.min(p.wishes || 0, 20) * 0.02;
     updateBuddyTag(p, r);
   }
+  updateWishes(dt, t);
+  updateTreeTag();
   trailAcc += dt;
   if (trailAcc >= 0.045) {
     trailAcc = 0;
@@ -1902,9 +2241,23 @@ renderer.setAnimationLoop(() => {
     }
   }
 
-  // sun/moon shadow rig follows the plane
-  dirLight.position.set(state.pos.x + 150, state.pos.y + 300, state.pos.z - 200);
+  // key light tracks the actual moon/sun direction, so lakes catch its reflection
+  dirLight.position.copy(state.pos).addScaledVector(moonDirTmp, 420);
   dirLight.target.position.copy(state.pos);
+
+  // mist pools drift through the hollows; fireflies wander
+  flyMat.uniforms.time.value = t;
+  flyMat.uniforms.globalOp.value = cur.stars * hillScale;
+  fireflies.visible = flyMat.uniforms.globalOp.value > 0.03;
+  for (const m of mists) {
+    m.position.x += m.userData.drift * dt;
+    m.material.opacity = cur.stars * 0.16 * hillScale;
+    if (Math.hypot(m.position.x - state.pos.x, m.position.z - state.pos.z) > 750) {
+      const a = Math.random() * Math.PI * 2, r = 250 + Math.random() * 400;
+      m.position.set(state.pos.x - Math.sin(a) * r, 0, state.pos.z - Math.cos(a) * r);
+    }
+    m.position.y = terrainH(m.position.x, m.position.z) + 9;
+  }
 
   // shooting stars, only under starry skies
   if (shootLife > 0) {
@@ -1943,14 +2296,16 @@ renderer.setAnimationLoop(() => {
     let extra = '';
     if (players.size > 0) extra = `<br>👥 ${players.size + 1} flying together`;
     else if (joined && roomCode) extra = `<br>🔑 room ${roomCode} — share the link!`;
-    statsEl.innerHTML = `⛰️ ${Math.round(state.pos.y)} m<br>💨 ${boosting ? 55 : 26} m/s${extra}`;
+    const wishLine = (wishes || released) ? `<br>🏮 ${wishes} · ✨ ${released}` : '';
+    statsEl.innerHTML = `⛰️ ${Math.round(state.pos.y)} m<br>💨 ${boosting ? 55 : 26} m/s${wishLine}${extra}`;
   }
 
   renderer.render(scene, camera);
 });
 
 // tiny debug handle for automated tests
-window.__sky = { camDrag, touchInput, players, state };
+window.__sky = { camDrag, touchInput, players, state, TREE_POS, LANTERNS,
+  get wishes() { return wishes; }, get released() { return released; } };
 </script>
 </body>
 </html>
