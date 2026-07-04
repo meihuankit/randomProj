@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guwahati Walk</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #9fd8ef; font-family: system-ui, sans-serif; }
+  #overlay {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
+    background: rgba(10, 25, 40, 0.72); color: #fff; cursor: pointer; z-index: 10;
+    text-align: center; backdrop-filter: blur(4px);
+  }
+  #overlay h1 { margin: 0; font-size: 2.4rem; letter-spacing: 1px; }
+  #overlay .sub { opacity: .85; font-size: 1.05rem; }
+  #overlay .keys { display: flex; gap: 18px; margin-top: 10px; font-size: .95rem; opacity: .9; }
+  #overlay .keys span { background: rgba(255,255,255,.12); padding: 6px 12px; border-radius: 8px; }
+  #overlay .start { margin-top: 18px; background: #ffb703; color: #1d2430; font-weight: 700;
+    padding: 12px 28px; border-radius: 999px; font-size: 1.1rem; }
+  #hud {
+    position: fixed; left: 12px; bottom: 12px; z-index: 5; color: #fff;
+    background: rgba(10, 25, 40, 0.55); padding: 8px 14px; border-radius: 10px;
+    font-size: .85rem; line-height: 1.5; pointer-events: none;
+  }
+  #compass {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5;
+    color: #fff; background: rgba(10,25,40,.55); padding: 6px 16px; border-radius: 999px;
+    font-size: 1rem; font-weight: 700; pointer-events: none;
+  }
+  #loading {
+    position: fixed; top: 12px; right: 12px; z-index: 5; color: #fff;
+    background: rgba(10,25,40,.55); padding: 6px 12px; border-radius: 8px;
+    font-size: .8rem; pointer-events: none;
+  }
+  #crosshair {
+    position: fixed; top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px;
+    border-radius: 50%; background: rgba(255,255,255,.8); z-index: 4; pointer-events: none;
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="overlay">
+  <h1>Guwahati Walk 🌆</h1>
+  <div class="sub">A stylized, walkable 3D Guwahati built live from OpenStreetMap</div>
+  <div class="keys">
+    <span>W A S D — walk</span><span>Mouse — look</span>
+    <span>Shift — run</span><span>Space — jump</span><span>Esc — pause</span>
+  </div>
+  <div class="start">Click to start walking</div>
+  <div class="sub" id="overlayStatus" style="font-size:.85rem"></div>
+</div>
+<div id="hud"></div>
+<div id="compass">N</div>
+<div id="loading"></div>
+<div id="crosshair" hidden></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+
+// ---------- Config ----------
+const ORIGIN = { lat: 26.1922, lon: 91.7522 };   // Uzan Bazar, Guwahati (near the Brahmaputra)
+const TILE_DEG = 0.003;                          // ~330 m tiles
+const LOAD_RADIUS = 1;                           // 3x3 tiles around player
+const UNLOAD_RADIUS = 3;
+const MAX_CONCURRENT_FETCHES = 2;
+
+const M_PER_DEG_LAT = 110540;
+const M_PER_DEG_LON = 111320 * Math.cos(ORIGIN.lat * Math.PI / 180);
+const toXZ = (lat, lon) => [ (lon - ORIGIN.lon) * M_PER_DEG_LON, -(lat - ORIGIN.lat) * M_PER_DEG_LAT ];
+const toLatLon = (x, z) => [ ORIGIN.lat - z / M_PER_DEG_LAT, ORIGIN.lon + x / M_PER_DEG_LON ];
+
+// ---------- Scene ----------
+const scene = new THREE.Scene();
+const SKY = new THREE.Color(0x9fd8ef);
+scene.background = SKY;
+scene.fog = new THREE.Fog(SKY, 120, 650);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 2000);
+camera.position.set(0, 1.7, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xeaf6ff, 0x8a9a7b, 1.0));
+const sun = new THREE.DirectionalLight(0xfff3d6, 1.6);
+sun.position.set(180, 260, 120);
+scene.add(sun);
+
+// Ground follows the player
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(4000, 4000),
+  new THREE.MeshLambertMaterial({ color: 0xa9bd8e })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.05;
+scene.add(ground);
+
+// Drifting stylized clouds
+const clouds = new THREE.Group();
+const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+for (let i = 0; i < 14; i++) {
+  const c = new THREE.Group();
+  const n = 3 + Math.floor(Math.random() * 3);
+  for (let j = 0; j < n; j++) {
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(12 + Math.random() * 16, 8, 6), cloudMat);
+    puff.position.set((j - n / 2) * 16, Math.random() * 6, (Math.random() - 0.5) * 14);
+    puff.scale.y = 0.45;
+    c.add(puff);
+  }
+  c.position.set((Math.random() - 0.5) * 1400, 160 + Math.random() * 60, (Math.random() - 0.5) * 1400);
+  c.userData.speed = 1.5 + Math.random() * 2;
+  clouds.add(c);
+}
+scene.add(clouds);
+
+// ---------- Controls / movement ----------
+const controls = new PointerLockControls(camera, document.body);
+const overlay = document.getElementById('overlay');
+const crosshair = document.getElementById('crosshair');
+overlay.addEventListener('click', () => controls.lock());
+controls.addEventListener('lock', () => { overlay.style.display = 'none'; crosshair.hidden = false; });
+controls.addEventListener('unlock', () => { overlay.style.display = 'flex'; crosshair.hidden = true; });
+
+const keys = {};
+addEventListener('keydown', e => keys[e.code] = true);
+addEventListener('keyup', e => keys[e.code] = false);
+
+let velY = 0, onGround = true;
+const EYE = 1.7;
+
+function updatePlayer(dt) {
+  if (!controls.isLocked) return;
+  const run = keys['ShiftLeft'] || keys['ShiftRight'];
+  const speed = run ? 16 : 6.5;
+  let fwd = (keys['KeyW'] || keys['ArrowUp'] ? 1 : 0) - (keys['KeyS'] || keys['ArrowDown'] ? 1 : 0);
+  let side = (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) - (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0);
+  const len = Math.hypot(fwd, side) || 1;
+  controls.moveForward(fwd / len * speed * dt);
+  controls.moveRight(side / len * speed * dt);
+
+  if (keys['Space'] && onGround) { velY = 5.2; onGround = false; }
+  if (!onGround) {
+    velY -= 14 * dt;
+    camera.position.y += velY * dt;
+    if (camera.position.y <= EYE) { camera.position.y = EYE; velY = 0; onGround = true; }
+  }
+  ground.position.x = camera.position.x;
+  ground.position.z = camera.position.z;
+}
+
+// ---------- OSM tile streaming ----------
+const tiles = new Map();          // key -> { group, state }
+const seenWays = new Set();       // dedupe ways across tiles
+let activeFetches = 0;
+const fetchQueue = [];
+const loadingEl = document.getElementById('loading');
+const overlayStatus = document.getElementById('overlayStatus');
+
+const ENDPOINTS = [
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter'
+];
+
+async function overpass(query) {
+  for (const ep of ENDPOINTS) {
+    try {
+      const r = await fetch(ep, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(query)
+      });
+      if (r.ok) return await r.json();
+    } catch (e) { /* try next mirror */ }
+  }
+  throw new Error('All Overpass mirrors failed');
+}
+
+const PALETTE = [0xf2e9dc, 0xe8d5c4, 0xf7f3e9, 0xdfe7e2, 0xe9dfec, 0xf5e0d8, 0xd8e2dc, 0xffe5d9]
+  .map(c => new THREE.Color(c));
+
+const ROAD_WIDTH = {
+  motorway: 16, trunk: 14, primary: 12, secondary: 10, tertiary: 8,
+  residential: 6, unclassified: 6, living_street: 5, service: 4
+};
+
+function addColorAttr(geom, color) {
+  const count = geom.getAttribute('position').count;
+  const arr = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) { arr[i*3] = color.r; arr[i*3+1] = color.g; arr[i*3+2] = color.b; }
+  geom.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+  return geom;
+}
+
+function footprintShape(geometry) {
+  const shape = new THREE.Shape();
+  geometry.forEach((pt, i) => {
+    const [x, z] = toXZ(pt.lat, pt.lon);
+    if (i === 0) shape.moveTo(x, -z); else shape.lineTo(x, -z);
+  });
+  return shape;
+}
+
+function buildingGeom(el) {
+  if (el.geometry.length < 4) return null;
+  const t = el.tags || {};
+  let h = parseFloat(t.height);
+  if (!h && t['building:levels']) h = parseFloat(t['building:levels']) * 3.2 + 1.5;
+  if (!h || isNaN(h)) h = 5 + (el.id % 11);
+  const geom = new THREE.ExtrudeGeometry(footprintShape(el.geometry), { depth: h, bevelEnabled: false });
+  geom.rotateX(-Math.PI / 2);
+  geom.deleteAttribute('uv');
+  return addColorAttr(geom, PALETTE[el.id % PALETTE.length]);
+}
+
+function ribbonGeom(el, width, y, color) {
+  const pts = el.geometry.map(pt => toXZ(pt.lat, pt.lon));
+  const pos = [];
+  const half = width / 2;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+    const dx = x2 - x1, dz = z2 - z1;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.01) continue;
+    const nx = -dz / len * half, nz = dx / len * half;
+    pos.push(
+      x1 + nx, y, z1 + nz,  x2 + nx, y, z2 + nz,  x2 - nx, y, z2 - nz,
+      x1 + nx, y, z1 + nz,  x2 - nx, y, z2 - nz,  x1 - nx, y, z1 - nz
+    );
+  }
+  if (!pos.length) return null;
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const normals = new Float32Array(pos.length);
+  for (let i = 0; i < normals.length; i += 3) normals[i + 1] = 1;
+  geom.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  return addColorAttr(geom, color);
+}
+
+function flatGeom(el, y, color) {
+  if (el.geometry.length < 4) return null;
+  const geom = new THREE.ShapeGeometry(footprintShape(el.geometry));
+  geom.rotateX(-Math.PI / 2);
+  geom.translate(0, y, 0);
+  geom.deleteAttribute('uv');
+  return addColorAttr(geom, color);
+}
+
+const roadCol = new THREE.Color(0x4a4f57);
+const laneCol = new THREE.Color(0x6b7280);
+const waterCol = new THREE.Color(0x63b3d1);
+const greenCol = new THREE.Color(0x7cae6b);
+
+// Deterministic PRNG so filler buildings stay put across reloads
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// 6 m occupancy grid: no filler where real buildings, roads or water already sit
+const CELL = 6;
+function markRect(occ, minX, minZ, maxX, maxZ) {
+  for (let gx = Math.floor(minX / CELL); gx <= Math.floor(maxX / CELL); gx++)
+    for (let gz = Math.floor(minZ / CELL); gz <= Math.floor(maxZ / CELL); gz++)
+      occ.add(gx + '_' + gz);
+}
+function rectFree(occ, minX, minZ, maxX, maxZ) {
+  for (let gx = Math.floor(minX / CELL); gx <= Math.floor(maxX / CELL); gx++)
+    for (let gz = Math.floor(minZ / CELL); gz <= Math.floor(maxZ / CELL); gz++)
+      if (occ.has(gx + '_' + gz)) return false;
+  return true;
+}
+
+const FILLER_ROADS = new Set(['primary','secondary','tertiary','residential','unclassified','living_street']);
+
+function fillerAlongRoads(roadEls, occ) {
+  const geoms = [];
+  for (const el of roadEls) {
+    if (!FILLER_ROADS.has(el.tags.highway)) continue;
+    const rnd = mulberry32(el.id);
+    const w = ROAD_WIDTH[el.tags.highway] || 5;
+    const major = el.tags.highway === 'primary' || el.tags.highway === 'secondary';
+    const pts = el.geometry.map(pt => toXZ(pt.lat, pt.lon));
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+      const dx = x2 - x1, dz = z2 - z1;
+      const segLen = Math.hypot(dx, dz);
+      if (segLen < 8) continue;
+      const ux = dx / segLen, uz = dz / segLen;      // along road
+      const nx = -uz, nz = ux;                        // perpendicular
+      const angle = Math.atan2(ux, uz);
+      for (let d = 10; d < segLen - 6; d += 15 + rnd() * 10) {
+        const px = x1 + ux * d, pz = z1 + uz * d;
+        for (const side of [-1, 1]) {
+          if (rnd() < 0.25) continue;                 // leave gaps — alleys, yards
+          const sx = 7 + rnd() * 7, sz = 7 + rnd() * 7;
+          const h = major ? 7 + rnd() * 14 : 4 + rnd() * 9;
+          const off = w / 2 + 4 + rnd() * 4 + Math.max(sx, sz) / 2;
+          const cx = px + nx * off * side, cz = pz + nz * off * side;
+          const r = Math.max(sx, sz) / 2 + 1;
+          if (!rectFree(occ, cx - r, cz - r, cx + r, cz + r)) continue;
+          markRect(occ, cx - r, cz - r, cx + r, cz + r);
+          const g = new THREE.BoxGeometry(sx, h, sz).toNonIndexed();
+          g.deleteAttribute('uv');
+          g.rotateY(angle);
+          g.translate(cx, h / 2, cz);
+          geoms.push(addColorAttr(g, PALETTE[Math.floor(rnd() * PALETTE.length)]));
+        }
+      }
+    }
+  }
+  return geoms;
+}
+
+function buildTileGroup(elements) {
+  const buildings = [], roads = [], flats = [], roadEls = [];
+  const occ = new Set();
+  for (const el of elements) {
+    if (el.type !== 'way' || !el.geometry || seenWays.has(el.id)) continue;
+    seenWays.add(el.id);
+    const t = el.tags || {};
+    if (t.building) {
+      const g = buildingGeom(el);
+      if (g) {
+        buildings.push(g);
+        let minX = 1e9, minZ = 1e9, maxX = -1e9, maxZ = -1e9;
+        for (const pt of el.geometry) {
+          const [x, z] = toXZ(pt.lat, pt.lon);
+          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+          minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+        }
+        markRect(occ, minX - 2, minZ - 2, maxX + 2, maxZ + 2);
+      }
+    } else if (t.highway) {
+      const w = ROAD_WIDTH[t.highway] || 5;
+      const major = ['motorway','trunk','primary','secondary'].includes(t.highway);
+      const g = ribbonGeom(el, w, major ? 0.08 : 0.05, major ? roadCol : laneCol);
+      if (g) {
+        roads.push(g);
+        roadEls.push(el);
+        const pts = el.geometry.map(pt => toXZ(pt.lat, pt.lon));
+        for (let i = 0; i < pts.length - 1; i++) {
+          const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+          const steps = Math.ceil(Math.hypot(x2 - x1, z2 - z1) / CELL);
+          for (let s = 0; s <= steps; s++) {
+            const px = x1 + (x2 - x1) * s / steps, pz = z1 + (z2 - z1) * s / steps;
+            markRect(occ, px - w / 2 - 2, pz - w / 2 - 2, px + w / 2 + 2, pz + w / 2 + 2);
+          }
+        }
+      }
+    } else if (t.natural === 'water' || t.waterway === 'riverbank' || t.water) {
+      const g = flatGeom(el, 0.02, waterCol);
+      if (g) {
+        flats.push(g);
+        let minX = 1e9, minZ = 1e9, maxX = -1e9, maxZ = -1e9;
+        for (const pt of el.geometry) {
+          const [x, z] = toXZ(pt.lat, pt.lon);
+          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+          minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+        }
+        markRect(occ, minX, minZ, maxX, maxZ);
+      }
+    } else if (t.leisure || t.landuse) {
+      const g = flatGeom(el, 0.015, greenCol); if (g) flats.push(g);
+    }
+  }
+  buildings.push(...fillerAlongRoads(roadEls, occ));
+  const group = new THREE.Group();
+  const lambert = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const flatMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  if (buildings.length) group.add(new THREE.Mesh(BufferGeometryUtils.mergeGeometries(buildings), lambert));
+  if (roads.length)     group.add(new THREE.Mesh(BufferGeometryUtils.mergeGeometries(roads), flatMat));
+  if (flats.length)     group.add(new THREE.Mesh(BufferGeometryUtils.mergeGeometries(flats), flatMat));
+  return group;
+}
+
+function tileQuery(ix, iy) {
+  const s = (iy * TILE_DEG).toFixed(6), n = ((iy + 1) * TILE_DEG).toFixed(6);
+  const w = (ix * TILE_DEG).toFixed(6), e = ((ix + 1) * TILE_DEG).toFixed(6);
+  const bbox = `(${s},${w},${n},${e})`;
+  return `[out:json][timeout:25];(
+    way["building"]${bbox};
+    way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street|service)$"]${bbox};
+    way["natural"="water"]${bbox};
+    way["waterway"="riverbank"]${bbox};
+    way["leisure"~"^(park|garden|pitch|playground)$"]${bbox};
+    way["landuse"~"^(grass|forest|meadow|recreation_ground)$"]${bbox};
+  );out geom;`;
+}
+
+async function loadTile(key, ix, iy) {
+  const entry = tiles.get(key);
+  try {
+    const data = await overpass(tileQuery(ix, iy));
+    if (!tiles.has(key)) return; // unloaded while fetching
+    const group = buildTileGroup(data.elements || []);
+    entry.group = group;
+    entry.state = 'loaded';
+    scene.add(group);
+  } catch (e) {
+    entry.state = 'error';
+    overlayStatus.textContent = 'Map server busy — will keep retrying as you walk.';
+    setTimeout(() => { if (tiles.get(key) === entry) tiles.delete(key); }, 8000);
+  }
+}
+
+function pumpQueue() {
+  while (activeFetches < MAX_CONCURRENT_FETCHES && fetchQueue.length) {
+    const { key, ix, iy } = fetchQueue.shift();
+    if (!tiles.has(key)) continue;
+    activeFetches++;
+    loadTile(key, ix, iy).finally(() => { activeFetches--; pumpQueue(); updateLoadingHud(); });
+  }
+  updateLoadingHud();
+}
+
+function updateLoadingHud() {
+  const pending = fetchQueue.length + activeFetches;
+  loadingEl.textContent = pending ? `Loading city… ${pending} block${pending > 1 ? 's' : ''}` : '';
+}
+
+function updateTiles() {
+  const [lat, lon] = toLatLon(camera.position.x, camera.position.z);
+  const cx = Math.floor(lon / TILE_DEG), cy = Math.floor(lat / TILE_DEG);
+
+  const wanted = [];
+  for (let dy = -LOAD_RADIUS; dy <= LOAD_RADIUS; dy++)
+    for (let dx = -LOAD_RADIUS; dx <= LOAD_RADIUS; dx++)
+      wanted.push({ ix: cx + dx, iy: cy + dy, d: Math.abs(dx) + Math.abs(dy) });
+  wanted.sort((a, b) => a.d - b.d);
+
+  for (const { ix, iy } of wanted) {
+    const key = ix + '_' + iy;
+    if (!tiles.has(key)) {
+      tiles.set(key, { group: null, state: 'queued' });
+      fetchQueue.push({ key, ix, iy });
+    }
+  }
+
+  for (const [key, entry] of tiles) {
+    const [ix, iy] = key.split('_').map(Number);
+    if (Math.max(Math.abs(ix - cx), Math.abs(iy - cy)) > UNLOAD_RADIUS && entry.state === 'loaded') {
+      scene.remove(entry.group);
+      entry.group.traverse(o => o.geometry && o.geometry.dispose());
+      tiles.delete(key);
+    }
+  }
+  pumpQueue();
+}
+
+// ---------- HUD ----------
+const hud = document.getElementById('hud');
+const compassEl = document.getElementById('compass');
+const DIRS = ['N','NE','E','SE','S','SW','W','NW'];
+const dirVec = new THREE.Vector3();
+
+function updateHud() {
+  const [lat, lon] = toLatLon(camera.position.x, camera.position.z);
+  const loaded = [...tiles.values()].filter(t => t.state === 'loaded').length;
+  hud.innerHTML = `📍 Guwahati &nbsp; ${lat.toFixed(5)}, ${lon.toFixed(5)}<br>🧱 ${loaded} city blocks loaded`;
+  camera.getWorldDirection(dirVec);
+  const deg = (Math.atan2(dirVec.x, -dirVec.z) * 180 / Math.PI + 360) % 360;
+  compassEl.textContent = DIRS[Math.round(deg / 45) % 8];
+}
+
+// ---------- Main loop ----------
+const clock = new THREE.Clock();
+setInterval(updateTiles, 600);
+setInterval(updateHud, 200);
+updateTiles();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  updatePlayer(dt);
+  for (const c of clouds.children) {
+    c.position.x += c.userData.speed * dt;
+    if (c.position.x - camera.position.x > 800) c.position.x -= 1600;
+  }
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
