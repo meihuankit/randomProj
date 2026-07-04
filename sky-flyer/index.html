@@ -1185,7 +1185,7 @@ const joyKnob = document.getElementById('joyKnob');
 const boostBtn = document.getElementById('boostBtn');
 let joyId = null, joyBaseX = 0, joyBaseY = 0;
 let lookId = null, lookX = 0, lookY = 0, lastLookTap = 0;
-const JOY_R = 55;
+const JOY_R = 70;
 
 renderer.domElement.addEventListener('touchstart', e => {
   e.preventDefault();
@@ -1961,17 +1961,21 @@ const silverCol = new THREE.Color(0xdfe9ff);
 function updateFlight(dt, t) {
   const left = keys['ArrowLeft'] || keys['KeyA'], right = keys['ArrowRight'] || keys['KeyD'];
   const up = keys['ArrowUp'] || keys['KeyW'], down = keys['ArrowDown'] || keys['KeyS'];
-  let steer = (left ? 1 : 0) + (right ? -1 : 0) - touchInput.x;
-  let climb = (up ? 1 : 0) + (down ? -1 : 0) - touchInput.y;
+  // expo curve on the stick: gentle near the center, full authority at the edge
+  const expo = v => v * Math.abs(v);
+  let steer = (left ? 1 : 0) + (right ? -1 : 0) - expo(touchInput.x);
+  let climb = (up ? 1 : 0) + (down ? -1 : 0) - expo(touchInput.y);
   steer = Math.max(-1, Math.min(1, steer));
   climb = Math.max(-1, Math.min(1, climb));
   const boost = keys['ShiftLeft'] || keys['ShiftRight'] || touchInput.boost;
 
-  const targetRoll = steer * 0.55;
-  const targetPitch = climb * 0.30;
-  state.roll += (targetRoll - state.roll) * Math.min(1, dt * 2.5);
-  state.pitch += (targetPitch - state.pitch) * Math.min(1, dt * 2.2);
-  state.yaw += state.roll * dt * 0.85;
+  // responsive: the body answers in a fraction of a second, and the heading
+  // turns hard enough to actually go where you point (wider arcs while boosting)
+  const targetRoll = steer * 0.62;
+  const targetPitch = climb * 0.5;
+  state.roll += (targetRoll - state.roll) * Math.min(1, dt * 6);
+  state.pitch += (targetPitch - state.pitch) * Math.min(1, dt * 5);
+  state.yaw += state.roll * dt * (boost ? 1.4 : 1.9);
 
   const speed = boost ? 55 : 26;
   FWD.set(0, 0, -1).applyEuler(new THREE.Euler(state.pitch, state.yaw, 0, 'YXZ'));
@@ -2006,7 +2010,7 @@ function updateFlight(dt, t) {
   const back = new THREE.Vector3(0, 3.4, 10.5)
     .applyEuler(new THREE.Euler(state.pitch * 0.5 + camDrag.pitch, state.yaw + camDrag.yaw, 0, 'YXZ'));
   camTarget.copy(state.pos).add(back);
-  camera.position.lerp(camTarget, 1 - Math.exp(-dt * (looking ? 9 : 3.2)));
+  camera.position.lerp(camTarget, 1 - Math.exp(-dt * (looking ? 9 : 4.6)));
   const orbit = Math.min(1, (Math.abs(camDrag.yaw) + Math.abs(camDrag.pitch)) * 2.5);
   const lookAt = state.pos.clone().addScaledVector(FWD, 10 * (1 - orbit));
   camera.lookAt(lookAt);
