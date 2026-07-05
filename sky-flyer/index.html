@@ -145,7 +145,7 @@ addEventListener('error', () => {
 <body>
 <div id="overlay">
   <h1>SKY DRIFT 🌙</h1>
-  <div class="sub">A moonlit countryside, and nowhere to be.</div>
+  <div class="sub">Moonlit mountains, a dreaming forest, and nowhere to be.</div>
   <div class="story">🏮 Somewhere below, someone is wishing on a lantern.<br>
   Every lantern light you carry to the great glowing tree <b>completes one wish</b>.<br>
   You are a <b>Wanderer</b> — fly with your friends, and complete the wishes of the world ✨</div>
@@ -181,7 +181,7 @@ const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in win
 
 // ---------------- Scenes (moods) ----------------
 const SCENES = [
-  { name: '🌙 Moonlit Night', top: 0x233670, bottom: 0x0c1338, fog: 0x182050, fogNear: 170, fogFar: 1050,
+  { name: '🌙 Moonlit Night', top: 0x233670, bottom: 0x0c1338, fog: 0x1e2a5c, fogNear: 170, fogFar: 1050,
     ground: 0x3d4f86, cloud: 0x4a5a94, cloudOp: .8, stars: .9, orb: 1, orbCol: 0xf8f4d8, orbPos: [260, 340, -700], orbScale: 1.12,
     hemi: .62, hemiCol: 0x9db0e8, dir: .95, dirCol: 0xd6e0ff, city: 0, aurora: 1, moonTex: 1 },
   { name: '🌃 City Lights', top: 0x191632, bottom: 0x0b0a18, fog: 0x100e22, fogNear: 120, fogFar: 800,
@@ -401,8 +401,25 @@ halo.scale.set(560, 560, 1);
 orbGroup.add(orb, moonFace, glow, halo);
 scene.add(orbGroup);
 
-// ---------------- Ground (rolling hills) ----------------
-const groundMat = new THREE.MeshLambertMaterial({ color: cur.ground, vertexColors: true });
+// ---------------- Ground (mountain ranges & valley floors) ----------------
+// faint grain so the ground reads as earth up close, not flat plastic
+function groundTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#cfcfcf'; ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 2600; i++) {
+    const v = 175 + Math.floor(Math.random() * 80);
+    ctx.fillStyle = `rgba(${v},${v},${v},${0.25 + Math.random() * 0.3})`;
+    ctx.fillRect(Math.random() * 256, Math.random() * 256, 1 + Math.random() * 2.5, 1 + Math.random() * 2.5);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+const G_REP = 96;
+const groundTex = groundTexture();
+groundTex.repeat.set(G_REP, G_REP);
+const groundMat = new THREE.MeshLambertMaterial({ color: cur.ground, vertexColors: true, map: groundTex });
 const G_SIZE = 2600, G_SEG = 100, G_STEP = G_SIZE / G_SEG;
 const groundGeo = new THREE.PlaneGeometry(G_SIZE, G_SIZE, G_SEG, G_SEG);
 groundGeo.rotateX(-Math.PI / 2);
@@ -418,27 +435,46 @@ function nSmooth(x, z) {
   const a = nHash(xi, zi), b = nHash(xi + 1, zi), c = nHash(xi, zi + 1), d = nHash(xi + 1, zi + 1);
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
-let hillScale = 1;   // hills flatten in the city scene so towers sit on level ground
+let hillScale = 1;   // terrain flattens in the city scene so towers sit on level ground
+// ridged noise raises long mountain chains; a broad "massif" mask decides where
+// ranges climb high and where valleys open up between them
 function terrainH(x, z) {
-  const n = nSmooth(x * 0.004, z * 0.004) + nSmooth(x * 0.011 + 13.7, z * 0.011 + 91.3) * 0.35;
-  return (n - 0.55) * 26 * hillScale;
+  const r1 = 1 - Math.abs(nSmooth(x * 0.0016, z * 0.0016) * 2 - 1);
+  const r2 = 1 - Math.abs(nSmooth(x * 0.0042 + 41.2, z * 0.0042 + 7.7) * 2 - 1);
+  const ridge = Math.pow(r1 * 0.75 + r2 * 0.25, 3.2);
+  const massif = nSmooth(x * 0.0009 + 5.2, z * 0.0009 + 77.8);
+  const rolling = (nSmooth(x * 0.004 + 13.7, z * 0.004 + 91.3) - 0.5) * 34
+                + (nSmooth(x * 0.013 + 3.1, z * 0.013 + 17.9) - 0.5) * 7;
+  return (ridge * (40 + massif * 150) + rolling - 12) * hillScale;
 }
-// countryside patchwork — every field its own moonlit shade, hedgerows between
-const FIELD = 150;
-const FIELD_PALS = [
-  [.82, .98, .9], [1.0, 1.06, .96], [.88, .94, 1.12], [1.12, 1.02, .84],
-  [.78, .9, 1.06], [1.04, 1.12, 1.0], [.94, 1.0, .88], [1.08, .96, 1.08]
-];
-function fieldTint(x, z, out) {
-  const fx = Math.floor(x / FIELD), fz = Math.floor(z / FIELD);
-  const r = mulberry32(fx * 73856093 ^ fz * 19349663 ^ 0x99)();
-  const p = FIELD_PALS[Math.floor(r * FIELD_PALS.length)];
-  const ex = Math.abs(x / FIELD - Math.round(x / FIELD));
-  const ez = Math.abs(z / FIELD - Math.round(z / FIELD));
-  const edge = Math.min(ex, ez) < 0.04 ? 0.68 : 1;   // hedgerow shadow lines
-  out[0] = p[0] * edge; out[1] = p[1] * edge; out[2] = p[2] * edge;
+// where the pines grow — broad belts with ragged edges
+function forestMask(x, z) {
+  return nSmooth(x * 0.0023 + 71.3, z * 0.0023 + 33.9) * 0.72
+       + nSmooth(x * 0.009 + 11.7, z * 0.009 + 57.1) * 0.28;
+}
+const sstep = (e0, e1, v) => {
+  const t = Math.max(0, Math.min(1, (v - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+// moonlit alpine palette: meadow grass in the valleys, dark forest floor under
+// the pines, bare rock on the steeps, snow on the high shoulders
+function mountainTint(x, z, h, slope, out) {
+  const grain = nHash(Math.floor(x * 0.5), Math.floor(z * 0.5)) * 0.14;
+  const lift = 0.72 + Math.min(1, (h + 24) / 130) * 0.5 + grain;
+  let r = 0.88 * lift, g = 1.0 * lift, b = 0.92 * lift;
+  const fk = sstep(0.48, 0.62, forestMask(x, z)) * sstep(0.5, 3, h) * (1 - sstep(78, 90, h));
+  r += (0.42 - r) * fk; g += (0.56 - g) * fk; b += (0.5 - b) * fk;
+  // vertex colours are multiplied by the deep-blue ground material, so rock and
+  // snow counter-tint (strong red, mild blue) to come out granite-gray and white
+  const rk = Math.max(sstep(0.9, 1.8, slope), sstep(70, 92, h) * 0.8);
+  const rockV = 0.62 + grain * 1.6;
+  r += (rockV * 1.5 - r) * rk; g += (rockV * 1.18 - g) * rk; b += (rockV * 0.94 - b) * rk;
+  const sn = sstep(86, 102, h + grain * 40) * (1 - sstep(2.1, 3.4, slope));
+  r += (4.4 - r) * sn; g += (3.3 - g) * sn; b += (1.98 - b) * sn;
+  out[0] = r; out[1] = g; out[2] = b;
 }
 const ftTmp = [1, 1, 1];
+const gHeights = new Float32Array((G_SEG + 1) * (G_SEG + 1));
 let gCX = Infinity, gCZ = Infinity, gHS = -1;
 function updateGround(px, pz) {
   hillScale = Math.max(0, 1 - cur.city - cur.ocean);
@@ -446,138 +482,88 @@ function updateGround(px, pz) {
   if (cx === gCX && cz === gCZ && Math.abs(hillScale - gHS) < 0.02) return;
   gCX = cx; gCZ = cz; gHS = hillScale;
   ground.position.set(cx, 0, cz);
+  // keep the grain texture pinned to the world while the mesh recenters
+  groundTex.offset.set(((cx * G_REP / G_SIZE) % 1 + 1) % 1, ((-cz * G_REP / G_SIZE) % 1 + 1) % 1);
   const pos = groundGeo.attributes.position, col = groundGeo.attributes.color;
+  const W = G_SEG + 1;
   for (let i = 0; i < pos.count; i++) {
-    const wx = pos.getX(i) + cx, wz = pos.getZ(i) + cz;
-    const h = terrainH(wx, wz);
+    const h = terrainH(pos.getX(i) + cx, pos.getZ(i) + cz);
+    gHeights[i] = h;
     pos.setY(i, h);
-    const tint = 0.8 + (h / 26 + 0.55) * 0.35;   // valleys darker, hilltops brighter
-    fieldTint(wx, wz, ftTmp);
-    col.setXYZ(i, tint * ftTmp[0], tint * ftTmp[1], tint * ftTmp[2]);
+  }
+  for (let i = 0; i < pos.count; i++) {
+    const ix = i % W, iz = (i / W) | 0;   // slope from grid neighbours — no extra noise calls
+    const dx = gHeights[ix < W - 1 ? i + 1 : i] - gHeights[ix > 0 ? i - 1 : i];
+    const dz = gHeights[iz < W - 1 ? i + W : i] - gHeights[iz > 0 ? i - W : i];
+    const slope = (Math.abs(dx) + Math.abs(dz)) / (2 * G_STEP);
+    mountainTint(pos.getX(i) + cx, pos.getZ(i) + cz, gHeights[i], slope, ftTmp);
+    col.setXYZ(i, ftTmp[0], ftTmp[1], ftTmp[2]);
   }
   pos.needsUpdate = true; col.needsUpdate = true;
   groundGeo.computeVertexNormals();
   updateTrees(cx, cz);
-  updateVillages(cx, cz);
   updateLakes(cx, cz);
   updateFireflies(cx, cz);
 }
 
-// ---------------- Trees on the hills ----------------
-const TREE_N = 260;
-const trunkMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.7, 4, 6),
-  new THREE.MeshLambertMaterial({ color: 0x6b4a2f }), TREE_N);
-const canopyMesh = new THREE.InstancedMesh(new THREE.ConeGeometry(3.4, 8, 8),
-  new THREE.MeshLambertMaterial({ color: 0x2f7a45 }), TREE_N);
+// ---------------- Pine forest ----------------
+// three stacked cones merged into one instanced silhouette — a whole forest in
+// two draw calls, dense enough to walk through
+const TREE_N = isTouch ? 520 : 900;
+const pineCanopyGeo = BufferGeometryUtils.mergeGeometries([
+  new THREE.ConeGeometry(3.6, 6.5, 7).translate(0, 6.2, 0),
+  new THREE.ConeGeometry(2.7, 5.5, 7).translate(0, 9.8, 0),
+  new THREE.ConeGeometry(1.7, 4.6, 7).translate(0, 13.2, 0)
+]);
+const trunkMesh = new THREE.InstancedMesh(
+  new THREE.CylinderGeometry(0.34, 0.55, 6, 6).translate(0, 3, 0),
+  new THREE.MeshLambertMaterial({ color: 0x3a2f2a, emissive: 0x0c0a08 }), TREE_N);
+const canopyMesh = new THREE.InstancedMesh(pineCanopyGeo,
+  new THREE.MeshLambertMaterial({ color: 0x24503e, emissive: 0x081410 }), TREE_N);
 trunkMesh.castShadow = canopyMesh.castShadow = true;
+canopyMesh.receiveShadow = true;
 scene.add(trunkMesh, canopyMesh);
 const treeMat4 = new THREE.Matrix4();
+const treeCol = new THREE.Color();
 function updateTrees(cx, cz) {
   const show = hillScale > 0.4;
   trunkMesh.visible = canopyMesh.visible = show;
   if (!show) return;
   let n = 0;
-  const CELL = 80, rr = Math.ceil(1100 / CELL);
+  const CELL = 42, rr = Math.ceil(880 / CELL);
   const ci = Math.round(cx / CELL), cj = Math.round(cz / CELL);
   for (let dj = -rr; dj <= rr && n < TREE_N; dj++) for (let di = -rr; di <= rr && n < TREE_N; di++) {
     const rnd = mulberry32((ci + di) * 73856093 ^ (cj + dj) * 19349663 ^ 0x2f);
-    if (rnd() < 0.45) continue;                       // empty cell
-    const x = (ci + di) * CELL + (rnd() - .5) * CELL * 0.9;
-    const z = (cj + dj) * CELL + (rnd() - .5) * CELL * 0.9;
-    const h = terrainH(x, z);
-    if (h < 3) continue;                              // trees prefer the hills
-    const s = 0.8 + rnd() * 0.9;
-    trunkMesh.setMatrixAt(n, treeMat4.makeScale(s, s, s).setPosition(x, h + 2 * s, z));
-    canopyMesh.setMatrixAt(n, treeMat4.makeScale(s, s, s).setPosition(x, h + 6.5 * s, z));
-    n++;
+    const bx = (ci + di) * CELL, bz = (cj + dj) * CELL;
+    const fm = forestMask(bx, bz);
+    if (fm < 0.5 && rnd() < 0.93) continue;           // lone stragglers outside the belts
+    const perCell = fm > 0.64 ? 3 : fm > 0.52 ? 2 : 1;
+    for (let k = 0; k < perCell && n < TREE_N; k++) {
+      const x = bx + (rnd() - .5) * CELL * 0.95;
+      const z = bz + (rnd() - .5) * CELL * 0.95;
+      const h = terrainH(x, z);
+      if (h < 1 || h > 86) continue;                  // between the lakes and the snowline
+      if (Math.abs(terrainH(x + 7, z) - h) > 7.5) continue;   // not on cliff faces
+      const s = 0.9 + rnd() * 1.15;
+      trunkMesh.setMatrixAt(n, treeMat4.makeScale(s, s, s).setPosition(x, h - 0.3, z));
+      canopyMesh.setMatrixAt(n, treeMat4);
+      const shade = 0.78 + rnd() * 0.42;              // uneven moonlight across the canopy
+      canopyMesh.setColorAt(n, treeCol.setScalar(shade));
+      n++;
+    }
   }
   for (; n < TREE_N; n++) {                           // park unused instances out of sight
     treeMat4.makeScale(0.001, 0.001, 0.001).setPosition(0, -80, 0);
     trunkMesh.setMatrixAt(n, treeMat4);
     canopyMesh.setMatrixAt(n, treeMat4);
+    canopyMesh.setColorAt(n, treeCol.setScalar(1));
   }
   trunkMesh.instanceMatrix.needsUpdate = true;
   canopyMesh.instanceMatrix.needsUpdate = true;
+  if (canopyMesh.instanceColor) canopyMesh.instanceColor.needsUpdate = true;
 }
 
-// ---------------- Sleeping villages (warm window lights in the valleys) ----------------
-const VIL_N = 700;
-const vilGeo = new THREE.BufferGeometry();
-vilGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(VIL_N * 3), 3));
-vilGeo.setAttribute('aPhase', new THREE.BufferAttribute(new Float32Array(VIL_N), 1));
-const vilMat = new THREE.ShaderMaterial({
-  uniforms: { time: { value: 0 }, globalOp: { value: 0 } },
-  vertexShader: `attribute float aPhase; uniform float time; varying float vA;
-    void main() {
-      vec4 mv = modelViewMatrix * vec4(position, 1.0);
-      vA = (0.72 + 0.28 * sin(time * (1.2 + fract(aPhase) * 2.0) + aPhase * 43.0))
-         * smoothstep(880.0, 520.0, -mv.z);
-      gl_PointSize = clamp(260.0 / -mv.z, 1.2, 5.0) * (1.6 + fract(aPhase * 7.0));
-      gl_Position = projectionMatrix * mv;
-    }`,
-  fragmentShader: `uniform float globalOp; varying float vA;
-    void main() {
-      float a = smoothstep(0.5, 0.08, length(gl_PointCoord - 0.5)) * vA * globalOp;
-      gl_FragColor = vec4(1.0, 0.8, 0.52, a);
-    }`,
-  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
-});
-const villages = new THREE.Points(vilGeo, vilMat);
-villages.frustumCulled = false;
-scene.add(villages);
-
-// farmhouses under the window lights — one merged hip-roof shape, instanced
-const HOUSE_N = 46;
-const houseGeo = (() => {
-  const walls = new THREE.BoxGeometry(6.4, 4, 7.5).translate(0, 2, 0);
-  const roof = new THREE.ConeGeometry(5.6, 3.4, 4).rotateY(Math.PI / 4).translate(0, 5.6, 0);
-  return BufferGeometryUtils.mergeGeometries([walls.toNonIndexed(), roof.toNonIndexed()]);
-})();
-const houseMat = new THREE.MeshLambertMaterial({ color: 0x4d5570, emissive: 0x090b16 });
-const houseMesh = new THREE.InstancedMesh(houseGeo, houseMat, HOUSE_N);
-houseMesh.castShadow = houseMesh.receiveShadow = true;
-scene.add(houseMesh);
-const housePos = new THREE.Vector3(), houseQuat = new THREE.Quaternion(), houseScl = new THREE.Vector3();
-const houseAxis = new THREE.Vector3(0, 1, 0);
-
-function updateVillages(cx, cz) {
-  const pos = vilGeo.attributes.position, pha = vilGeo.attributes.aPhase;
-  let n = 0, hn = 0;
-  const CELL = 210, rr = Math.ceil(880 / CELL);
-  const ci = Math.round(cx / CELL), cj = Math.round(cz / CELL);
-  for (let dj = -rr; dj <= rr && n < VIL_N; dj++) for (let di = -rr; di <= rr && n < VIL_N; di++) {
-    const rnd = mulberry32((ci + di) * 73856093 ^ (cj + dj) * 19349663 ^ 0x51);
-    if (rnd() < 0.72) continue;                       // most cells stay dark
-    const vx = (ci + di) * CELL + (rnd() - .5) * CELL * 0.6;
-    const vz = (cj + dj) * CELL + (rnd() - .5) * CELL * 0.6;
-    if (terrainH(vx, vz) > 2) continue;               // hamlets settle in the valleys
-    const homes = 6 + Math.floor(rnd() * 12);
-    for (let k = 0; k < homes && n < VIL_N; k++) {
-      const hx = vx + (rnd() - .5) * 56, hz = vz + (rnd() - .5) * 56;
-      pos.setXYZ(n, hx, terrainH(hx, hz) + 1.4 + rnd() * 2.4, hz);
-      pha.setX(n, rnd() * 100);
-      n++;
-    }
-    for (let k = 0, hh = 1 + Math.floor(rnd() * 2); k < hh && hn < HOUSE_N; k++) {
-      const hx = vx + (rnd() - .5) * 60, hz = vz + (rnd() - .5) * 60;
-      const s = 0.8 + rnd() * 0.5;
-      housePos.set(hx, terrainH(hx, hz) - 0.3, hz);
-      houseQuat.setFromAxisAngle(houseAxis, rnd() * Math.PI * 2);
-      houseScl.setScalar(s);
-      houseMesh.setMatrixAt(hn, treeMat4.compose(housePos, houseQuat, houseScl));
-      hn++;
-    }
-  }
-  for (; hn < HOUSE_N; hn++) {
-    houseMesh.setMatrixAt(hn, treeMat4.compose(housePos.set(0, -90, 0), houseQuat, houseScl.setScalar(0.001)));
-  }
-  houseMesh.instanceMatrix.needsUpdate = true;
-  houseMesh.visible = hillScale > 0.4;
-  vilGeo.setDrawRange(0, n);
-  pos.needsUpdate = true; pha.needsUpdate = true;
-}
-
-// fireflies drifting over the meadows
+// fireflies drifting through the glades
 const FLY_N = 240;
 const flyGeo = new THREE.BufferGeometry();
 flyGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(FLY_N * 3), 3));
@@ -632,7 +618,47 @@ const mists = [];
   }
 }
 
-// ---------------- Moonlit lakes in the valley floors ----------------
+// ---------------- Moon shafts — slanting light between the pines ----------------
+function shaftTexture() {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 256;
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, 'rgba(215,228,255,.5)');
+  g.addColorStop(0.75, 'rgba(215,228,255,.16)');
+  g.addColorStop(1, 'rgba(215,228,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 256);
+  const fade = ctx.createLinearGradient(0, 0, 64, 0);   // soft vertical edges
+  fade.addColorStop(0, 'rgba(0,0,0,1)'); fade.addColorStop(0.25, 'rgba(0,0,0,0)');
+  fade.addColorStop(0.75, 'rgba(0,0,0,0)'); fade.addColorStop(1, 'rgba(0,0,0,1)');
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.fillStyle = fade; ctx.fillRect(0, 0, 64, 256);
+  return new THREE.CanvasTexture(c);
+}
+const shafts = [];
+let forestK = 0;   // how deep in the trees you are — thickens fog, wakes the shafts
+{
+  const shaftTex = shaftTexture();
+  for (let i = 0; i < 7; i++) {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.5 + Math.random() * 5, 46 + Math.random() * 26),
+      new THREE.MeshBasicMaterial({ map: shaftTex, transparent: true, opacity: 0,
+        depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
+    m.rotation.z = 0.34 + Math.random() * 0.2;        // leaning with the moonlight
+    m.rotation.y = Math.random() * Math.PI;
+    m.userData.phase = Math.random() * 6.28;
+    m.visible = false;
+    shafts.push(m);
+    scene.add(m);
+  }
+}
+function placeShaft(m, px, pz) {
+  const a = Math.random() * Math.PI * 2, r = 18 + Math.random() * 95;
+  const x = px + Math.sin(a) * r, z = pz + Math.cos(a) * r;
+  m.position.set(x, terrainH(x, z) + 17, z);
+  m.rotation.y = Math.random() * Math.PI;
+}
+
+// ---------------- Moonlit tarns in the valley floors ----------------
 const LAKE_N = 30;
 const lakeDayCol = new THREE.Color(0x2b6f9e), lakeNightCol = new THREE.Color(0x1c3560);
 const lakeMat = new THREE.MeshPhongMaterial({ color: 0x16324f, specular: 0xf0f6ff, shininess: 240,
@@ -1085,24 +1111,41 @@ function buildFlyer(accent) {
   model.add(aura);
   return { rig, model, pose, bodyMat: accentMat, armL, armR, legL, legR, hem, fringe, headG, aura };
 }
-// living pose — arms ride the wind, cloth and hair flutter, dives sweep the
-// arms back, climbs open them wide, boost tucks everything in
-function flyerPose(f, t, phase, boostK, pitch, restK) {
+// living pose — one body, many verbs: prone glide, upright float, walking and
+// running strides, a lean-back sit, and lying flat with eyes on the stars.
+// g carries the ground blend: {gk, ph (walk cycle), mv, runK, sitK, lieK}
+function flyerPose(f, t, phase, boostK, pitch, restK, g) {
   restK = restK || 0;
-  const fly = 1 - restK;
-  const flare = (0.55 - boostK * 0.38 + pitch * 0.35) * fly + 0.16 * restK;
-  const sway = 0.07 * fly + 0.05 * restK;
+  const gk = g ? g.gk : 0;
+  const sitK = (g ? g.sitK : 0) * gk, lieK = (g ? g.lieK : 0) * gk;
+  const ph = g ? g.ph : 0, mv = g ? g.mv : 0, runK = g ? g.runK : 0;
+  const fly = (1 - restK) * (1 - gk);
+  const floatK = restK * (1 - gk);
+  const standK = gk * (1 - sitK) * (1 - lieK);
+  // arms: riding the wind aloft, swinging with the stride on the ground
+  const flare = (0.55 - boostK * 0.38 + pitch * 0.35) * fly + 0.16 * floatK
+              + 0.14 * standK + 0.24 * sitK + 0.5 * lieK;
+  const sway = 0.07 * fly + 0.05 * floatK + 0.03 * gk;
   f.armL.rotation.z = -flare + Math.sin(t * 1.4 + phase) * sway;
   f.armR.rotation.z = flare - Math.sin(t * 1.4 + phase + 0.9) * sway;
-  f.armL.rotation.x = f.armR.rotation.x = (-0.3 + boostK * 0.15 - pitch * 0.4) * fly + 0.08 * restK;
-  const kick = 0.09 * fly + 0.035 * restK;
-  f.legL.rotation.x = -0.08 * fly + Math.sin(t * 1.15 + phase) * kick;
-  f.legR.rotation.x = -0.08 * fly + Math.sin(t * 1.15 + phase + Math.PI) * kick;
-  f.hem.rotation.x = Math.sin(t * (5.4 + boostK * 3) + phase) * (0.05 + boostK * 0.05) * (1 - restK * 0.6);
-  f.fringe.rotation.x = 0.35 + Math.sin(t * (4.6 + boostK * 3) + phase * 2) * (0.07 + boostK * 0.07);
-  f.headG.rotation.x = (0.8 + pitch * 0.3) * fly + 0.08 * restK + Math.sin(t * 0.7 + phase) * 0.04;
-  // prone glide <-> upright float
-  f.pose.rotation.x = -Math.PI / 2 * fly;
+  const armAir = (-0.3 + boostK * 0.15 - pitch * 0.4) * fly + 0.08 * floatK;
+  const armSwing = Math.sin(ph) * (0.42 + runK * 0.34) * mv;
+  f.armL.rotation.x = armAir + (armSwing + runK * -0.5 * mv) * standK - 0.5 * sitK + 0.12 * lieK;
+  f.armR.rotation.x = armAir + (-armSwing + runK * -0.5 * mv) * standK - 0.5 * sitK + 0.12 * lieK;
+  // legs: trailing kick aloft, striding on the trail, stretched out to rest
+  const kick = 0.09 * fly + 0.035 * floatK;
+  const stride = Math.sin(ph) * (0.5 + runK * 0.3) * mv;
+  f.legL.rotation.x = -0.08 * (1 - gk) + Math.sin(t * 1.15 + phase) * kick
+                    + stride * standK + 1.45 * sitK + 0.04 * lieK;
+  f.legR.rotation.x = -0.08 * (1 - gk) + Math.sin(t * 1.15 + phase + Math.PI) * kick
+                    - stride * standK + 1.45 * sitK + 0.04 * lieK;
+  const flutter = fly + (0.25 + runK * 0.5) * gk;
+  f.hem.rotation.x = Math.sin(t * (5.4 + boostK * 3) + phase) * (0.05 + boostK * 0.05) * flutter;
+  f.fringe.rotation.x = 0.35 + Math.sin(t * (4.6 + boostK * 3) + phase * 2) * (0.07 + boostK * 0.07) * (flutter + 0.3);
+  f.headG.rotation.x = (0.8 + pitch * 0.3) * fly + 0.08 * floatK
+                     + 0.06 * standK + 0.42 * sitK + Math.sin(t * 0.7 + phase) * 0.04;
+  // prone glide <-> upright <-> leaning back <-> flat on the grass, face to the stars
+  f.pose.rotation.x = -Math.PI / 2 * fly - 0.2 * sitK + Math.PI / 2 * 0.96 * lieK;
 }
 const PLANE_COLS = [0xe8654f, 0x4fa3e8, 0x7ac97a, 0xf2c14e, 0xc79bf2, 0xff8fa3, 0x6fd9c8, 0xffa94d];
 const me = buildFlyer(PLANE_COLS[0]);
@@ -1172,24 +1215,79 @@ let trailAcc = 0;
 const state = { pos: new THREE.Vector3(0, 70, 0), yaw: 0, pitch: 0, roll: 0 };
 let boostAmt = 0;
 
+// ---------------- On the ground: walk, run, sit, lie back ----------------
+let mode = 'fly';        // 'fly' | 'ground'
+let groundSit = 0;       // 0 stand/walk · 1 sit · 2 lie back & watch the sky
+let gk = 0, sitK = 0, lieK = 0;          // smoothed blend factors for the pose
+let walkPh = 0, moveAmt = 0, runK = 0;   // walk-cycle phase & intensity
+const FOOT_Y = 3.8;      // rig origin sits this far above the soles when standing
+
 // barrel roll — pure joy, zero stakes (Space / double-tap the look side)
 let rollAnim = 0, rollFx = 0;
 function triggerRoll() {
-  if (flying && rollAnim === 0 && !resting) rollAnim = 1e-6;
+  if (flying && mode === 'fly' && rollAnim === 0 && !resting) rollAnim = 1e-6;
 }
 
 // rest mode — stop mid-air, float upright, and just watch the night go by
 let resting = false, restAmt = 0;
 const restBtn = document.getElementById('restBtn');
 function setRest(v) {
-  if (resting === v || !flying) return;
+  if (resting === v || !flying || mode !== 'fly') return;
   resting = v;
-  restBtn.textContent = v ? '🕊️' : '🧘';
-  restBtn.title = v ? 'Fly again' : 'Rest & watch';
   showToast(v ? 'Just floating… breathe 🧘' : 'Back to the wind 🕊️');
   if (!v) camDrag.yaw = ((camDrag.yaw + Math.PI) % 6.2832 + 6.2832) % 6.2832 - Math.PI;
+  updateContextBtn();
 }
-restBtn.onclick = () => setRest(!resting);
+// one button, always the next gentle thing to do
+function updateContextBtn() {
+  if (mode === 'fly') {
+    restBtn.textContent = resting ? '🕊️' : '🧘';
+    restBtn.title = resting ? 'Fly again' : 'Rest & watch';
+  } else {
+    restBtn.textContent = groundSit === 0 ? '🪑' : groundSit === 1 ? '🌙' : '🧍';
+    restBtn.title = groundSit === 0 ? 'Sit down' : groundSit === 1 ? 'Lie back & watch the sky' : 'Stand up';
+  }
+}
+restBtn.onclick = () => {
+  if (mode === 'fly') setRest(!resting);
+  else setSit((groundSit + 1) % 3);
+};
+
+function setSit(n) {
+  if (mode !== 'ground') return;
+  groundSit = n;
+  if (n === 1) showToast('🪑 Sitting… the mountains breathe with you');
+  else if (n === 2) {
+    // first gaze catches the moon low in the frame, sky and stars above it
+    camDrag.yaw = Math.atan2(-cur.orbPos.x, -cur.orbPos.z) - state.yaw;
+    camDrag.pitch = -0.2;
+    showToast('🌙 Eyes on the sky… (move to get up)');
+  }
+  updateContextBtn();
+  netPublishState();
+}
+
+let boostLatch = false;   // holding 🚀 through a landing shouldn't bounce you back up
+function land() {
+  if (mode === 'ground') return;
+  mode = 'ground'; groundSit = 0;
+  resting = false; restAmt = 0;
+  rollAnim = 0; rollFx = 0;
+  boostLatch = touchInput.boost;
+  showToast('🥾 You landed');
+  setHint();
+  updateContextBtn();
+}
+function takeoff() {
+  if (mode === 'fly') return;
+  mode = 'fly'; groundSit = 0;
+  sitK = lieK = 0;
+  state.pitch = 0.42;
+  state.pos.y = terrainH(state.pos.x, state.pos.z) + 6;
+  showToast('🕊️ Into the night');
+  setHint();
+  updateContextBtn();
+}
 
 // free-look camera — flying steers the body, this swings your eyes around it
 const camDrag = { yaw: 0, pitch: 0, mouse: false, lx: 0, ly: 0 };
@@ -1215,8 +1313,8 @@ addEventListener('keydown', e => {
     if (SCENES[i]) setScene(i);
   }
   if (e.code === 'KeyM') toggleSound();
-  if (e.code === 'Space') triggerRoll();
-  if (e.code === 'KeyR') setRest(!resting);
+  if (e.code === 'Space') { if (flying && mode === 'ground') takeoff(); else triggerRoll(); }
+  if (e.code === 'KeyR') { if (mode === 'ground') setSit((groundSit + 1) % 3); else setRest(!resting); }
 });
 addEventListener('keyup', e => keys[e.code] = false);
 
@@ -1483,9 +1581,19 @@ const nameInput = document.getElementById('nameInput');
 const joinInput = document.getElementById('joinCode');
 let flying = false;
 
-hint.innerHTML = isTouch
-  ? 'Left thumb — fly · right thumb — look · 2×tap right — roll · 🧘 rest'
-  : '← → steer &nbsp;·&nbsp; ↑ ↓ climb / dive &nbsp;·&nbsp; Shift — glide faster &nbsp;·&nbsp; Space — barrel roll<br>drag mouse — look around &nbsp;·&nbsp; R — rest &amp; watch &nbsp;·&nbsp; M — sound on/off';
+let hintTimer = null;
+function setHint() {
+  const fly = mode === 'fly';
+  hint.innerHTML = isTouch
+    ? (fly ? 'Left thumb — fly · right — look · 2×tap right — roll · dive to the ground to land 🥾'
+           : 'Joystick — walk · push to the edge — run · 🚀 — fly · 🪑 — sit & watch the sky')
+    : (fly ? '← → steer &nbsp;·&nbsp; ↑ ↓ climb / dive &nbsp;·&nbsp; Shift — glide faster &nbsp;·&nbsp; Space — barrel roll<br>dive to the ground — land &amp; walk &nbsp;·&nbsp; drag mouse — look &nbsp;·&nbsp; R — rest &nbsp;·&nbsp; M — sound'
+           : '↑ ↓ walk &nbsp;·&nbsp; ← → turn &nbsp;·&nbsp; Shift — run &nbsp;·&nbsp; R — sit / lie back / stand<br>Space — fly again &nbsp;·&nbsp; drag mouse — look around');
+  hint.style.opacity = 1;
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => hint.style.opacity = 0.25, 12000);
+}
+setHint();
 
 nameInput.value = localStorage.getItem('skydrift-name') || '';
 
@@ -1538,19 +1646,30 @@ function startFlight() {
     boostBtn.style.display = 'flex';
     if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
   }
-  setTimeout(() => hint.style.opacity = 0.25, 12000);
+  setHint();
   setTimeout(() => { if (wishes === 0 && released === 0) showToast('Catch the drifting lanterns 🏮'); }, 7000);
 }
 
 // ---------------- Night of Wishes — the reason to fly ----------------
-// Paper lanterns rise from the sleeping villages. Catch them and you glow a
+// Paper lanterns rise out of the dark valleys. Catch them and you glow a
 // little brighter; carry the wishes to the great Wishing Tree and set them
 // free in a burst of light petals your friends can see.
 let wishes = 0, released = 0;
 let lanternChime = null, releaseChord = null;   // wired up inside initAudio
 
 // -- the Wishing Tree, a landmark you can always fly home to --
+// the mountains are wild now, so scout a gentle valley knoll for it to stand on
 const TREE_POS = new THREE.Vector3(30, 0, -260);
+{
+  let best = 1e9;
+  for (let dz = -260; dz <= 260; dz += 26) for (let dx = -260; dx <= 260; dx += 26) {
+    const x = 30 + dx, z = -260 + dz;
+    const h = terrainH(x, z);
+    const steep = Math.abs(terrainH(x + 14, z) - h) + Math.abs(terrainH(x, z + 14) - h);
+    const score = Math.abs(h - 5) + steep * 2.5;
+    if (score < best) { best = score; TREE_POS.set(x, 0, z); }
+  }
+}
 TREE_POS.y = terrainH(TREE_POS.x, TREE_POS.z);
 const wishTree = new THREE.Group();
 {
@@ -1811,6 +1930,7 @@ function applyRemoteState(id, d) {
   p.wishes = d.w || 0;
   p.released = d.q || 0;
   p.rest = d.r || 0;
+  p.md = d.md || 0;
 }
 
 function netSendScene(i) {
@@ -1823,6 +1943,8 @@ function netPublishState() {
   if (!client || !joined) return;
   client.publish(roomTopic() + '/p/' + myId, JSON.stringify({
     n: myName(), w: wishes, q: released, r: resting ? 1 : 0,
+    md: mode === 'fly' ? 0 : groundSit === 1 ? 4 : groundSit === 2 ? 5
+      : moveAmt > 0.25 ? (runK > 0.5 ? 3 : 2) : 1,
     p: [+state.pos.x.toFixed(2), +state.pos.y.toFixed(2), +state.pos.z.toFixed(2)],
     yw: +state.yaw.toFixed(3), pt: +state.pitch.toFixed(3), rl: +(state.roll + rollFx).toFixed(3)
   }));
@@ -2040,9 +2162,13 @@ function updateFlight(dt, t) {
   state.pos.addScaledVector(FWD, speed * dt);
   state.pos.y += Math.sin(t * 0.8) * dt * 0.9 * restAmt;   // hover bob while resting
 
-  // gentle altitude limits — the sky is a comfy place, hills included
-  const floorY = Math.max(10, terrainH(state.pos.x, state.pos.z) + 8);
-  if (state.pos.y < floorY) { state.pos.y = floorY; state.pitch = Math.max(state.pitch, 0); }
+  // gentle altitude limits — and keep pressing down near the ground to land
+  const floorY = terrainH(state.pos.x, state.pos.z) + 2.3;
+  if (state.pos.y < floorY) {
+    state.pos.y = floorY;
+    if (climb < -0.25 && !resting) { land(); return false; }
+    state.pitch = Math.max(state.pitch, 0);
+  }
   if (state.pos.y > 400) { state.pos.y = 400; state.pitch = Math.min(state.pitch, 0); }
 
   rig.position.copy(state.pos);
@@ -2056,7 +2182,6 @@ function updateFlight(dt, t) {
   }
   model.position.y = Math.sin(t * 1.6) * 0.25;
   boostAmt += ((boost ? 1 : 0) - boostAmt) * Math.min(1, dt * 4);
-  flyerPose(me, t, 0, boostAmt, state.pitch, restAmt);
 
   // chase camera + free look: drag offsets orbit around the wanderer,
   // then ease back behind the shoulders once released
@@ -2075,6 +2200,8 @@ function updateFlight(dt, t) {
     .multiplyScalar(1 + restAmt * 0.5)
     .applyEuler(new THREE.Euler(state.pitch * 0.5 * move + camDrag.pitch, state.yaw + camDrag.yaw, 0, 'YXZ'));
   camTarget.copy(state.pos).add(back);
+  // mountainsides are tall now — never let the chase camera sink into one
+  camTarget.y = Math.max(camTarget.y, terrainH(camTarget.x, camTarget.z) + 1.6);
   camera.position.lerp(camTarget, 1 - Math.exp(-dt * (looking ? 9 : 4.6)));
   const orbit = Math.min(1, (Math.abs(camDrag.yaw) + Math.abs(camDrag.pitch)) * 2.5);
   const lookAt = state.pos.clone().addScaledVector(FWD, 10 * (1 - orbit));
@@ -2088,6 +2215,86 @@ function updateFlight(dt, t) {
     camera.updateProjectionMatrix();
   }
   return boost;
+}
+
+// ---------------- On foot: the same night, slower ----------------
+const CAM_WALK = isTouch ? new THREE.Vector3(0, 3.1, 9.2) : new THREE.Vector3(0, 2.6, 7.4);
+const eyeTmp = new THREE.Vector3(), povDir = new THREE.Vector3(), lookTmp = new THREE.Vector3();
+function updateWalk(dt, t) {
+  const left = keys['ArrowLeft'] || keys['KeyA'], right = keys['ArrowRight'] || keys['KeyD'];
+  const up = keys['ArrowUp'] || keys['KeyW'], down = keys['ArrowDown'] || keys['KeyS'];
+  const expo = v => v * Math.abs(v);
+  let steer = (left ? 1 : 0) + (right ? -1 : 0) - expo(touchInput.x);
+  let fwd = (up ? 1 : 0) + (down ? -1 : 0) - expo(touchInput.y);
+  steer = Math.max(-1, Math.min(1, steer));
+  fwd = Math.max(-1, Math.min(1, fwd));
+  if (touchInput.boost && !boostLatch) { takeoff(); return false; }   // 🚀 leaps back into the sky
+  if (!touchInput.boost) boostLatch = false;
+  boostAmt -= boostAmt * Math.min(1, dt * 4);
+  if (groundSit > 0 && (Math.abs(steer) > 0.4 || Math.abs(fwd) > 0.4)) setSit(0);
+  const seated = groundSit > 0;
+  const runHeld = (keys['ShiftLeft'] || keys['ShiftRight']
+    || Math.hypot(touchInput.x, touchInput.y) > 0.92) && fwd > 0.2 && !seated;
+
+  state.yaw += steer * dt * 2.6 * (seated ? 0 : 1);
+  state.pitch -= state.pitch * Math.min(1, dt * 5);   // settle after touchdown
+  state.roll -= state.roll * Math.min(1, dt * 5);
+
+  runK += ((runHeld ? 1 : 0) - runK) * Math.min(1, dt * 4);
+  const mv = seated ? 0 : fwd;
+  moveAmt += (Math.abs(mv) - moveAmt) * Math.min(1, dt * 6);
+  const speed = mv * (mv > 0 ? 4.6 + runK * 6.2 : 3);  // backing up is slower
+  FWD.set(0, 0, -1).applyEuler(new THREE.Euler(0, state.yaw, 0, 'YXZ'));
+  state.pos.addScaledVector(FWD, speed * dt);
+  walkPh += dt * (5.4 + runK * 3.4) * moveAmt;
+
+  sitK += ((groundSit === 1 ? 1 : 0) - sitK) * Math.min(1, dt * 3);
+  lieK += ((groundSit === 2 ? 1 : 0) - lieK) * Math.min(1, dt * 2.2);
+  const gy = terrainH(state.pos.x, state.pos.z);
+  state.pos.y += (gy + FOOT_Y - sitK * 1.7 - lieK * 2.95 - state.pos.y) * Math.min(1, dt * 9);
+
+  rig.position.copy(state.pos);
+  rig.rotation.set(state.pitch, state.yaw, state.roll);
+  model.position.y = Math.abs(Math.sin(walkPh)) * (0.1 + runK * 0.13) * moveAmt
+                   + Math.sin(t * 1.7) * 0.03 * (1 - moveAmt);   // stride bounce / idle breath
+
+  // camera: over the shoulder — sitting slowly orbits, lying back becomes your eyes
+  const looking = camDrag.mouse || lookId !== null;
+  if (!looking) {
+    if (sitK > 0.5 && lieK < 0.5) {
+      camDrag.yaw += dt * 0.05;
+      camDrag.pitch += (0.14 - camDrag.pitch) * Math.min(1, dt);
+    } else if (lieK < 0.5) {
+      const ease = 1 - Math.exp(-dt * 2.2);
+      camDrag.yaw -= camDrag.yaw * ease;
+      camDrag.pitch -= camDrag.pitch * ease;
+    }
+  }
+  const back = lookTmp.copy(CAM_WALK)
+    .multiplyScalar(1 + sitK * 0.45)
+    .applyEuler(new THREE.Euler(camDrag.pitch, state.yaw + camDrag.yaw, 0, 'YXZ'));
+  camTarget.copy(state.pos).add(back);
+  camTarget.y = Math.max(camTarget.y, terrainH(camTarget.x, camTarget.z) + 1.4);
+  const povK = sstep(0.25, 0.9, lieK);
+  if (povK > 0) {   // slide into your own eyes — a whisper above them, clear of the hair
+    eyeTmp.set(0, 0.9 + Math.sin(t * 0.45) * 0.05, 1.05)   // slow breathing under the stars
+      .applyEuler(new THREE.Euler(0, state.yaw, 0, 'YXZ')).add(state.pos);
+    camTarget.lerp(eyeTmp, povK);
+  }
+  camera.position.lerp(camTarget, 1 - Math.exp(-dt * (looking ? 9 : 5)));
+  const pitchCam = Math.min(1.52, camDrag.pitch + povK * 0.95);
+  const yawCam = state.yaw + camDrag.yaw;
+  povDir.set(-Math.sin(yawCam) * Math.cos(pitchCam), Math.sin(pitchCam), -Math.cos(yawCam) * Math.cos(pitchCam));
+  lookTmp.set(state.pos.x, state.pos.y + 1.1, state.pos.z)
+    .lerp(povDir.multiplyScalar(40).add(camera.position), povK);
+  camera.lookAt(lookTmp);
+
+  const targetFov = 62 + povK * 12;   // the sky opens up when you lie back
+  if (Math.abs(camera.fov - targetFov) > 0.05) {
+    camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3);
+    camera.updateProjectionMatrix();
+  }
+  return false;
 }
 
 function recycleClouds() {
@@ -2148,7 +2355,6 @@ function lerpScene(dt) {
   hemiLight.color.copy(cur.hemiCol); hemiLight.intensity = cur.hemi;
   dirLight.color.copy(cur.dirCol); dirLight.intensity = cur.dir;
   milkyMat.opacity = cur.stars * 0.5;
-  vilMat.uniforms.globalOp.value = cur.stars * Math.max(0, 1 - cur.city - cur.ocean);
   lakeMat.color.copy(lakeDayCol).lerp(lakeNightCol, cur.stars);
 }
 cur.city = target.city;
@@ -2169,9 +2375,15 @@ renderer.setAnimationLoop(() => {
   const t = clock.elapsedTime;
 
   let boosting = false;
-  if (flying) boosting = updateFlight(dt, t);
-  else { // idle drift behind the title screen
+  if (flying) {
+    boosting = mode === 'fly' ? updateFlight(dt, t) : updateWalk(dt, t);
+    gk += ((mode === 'ground' ? 1 : 0) - gk) * Math.min(1, dt * 3.5);
+    flyerPose(me, t, 0, boostAmt, state.pitch, restAmt,
+      { gk, ph: walkPh, mv: moveAmt, runK, sitK, lieK });
+  } else { // idle drift behind the title screen — riding over the ranges
     state.pos.z -= 8 * dt;
+    const gy = terrainH(state.pos.x, state.pos.z);
+    state.pos.y += (Math.max(70, gy + 36) - state.pos.y) * Math.min(1, dt);
     rig.position.copy(state.pos);
     camera.position.set(state.pos.x + 10, state.pos.y + 4, state.pos.z + 16);
     camera.lookAt(state.pos);
@@ -2191,9 +2403,22 @@ renderer.setAnimationLoop(() => {
     r.rotation.x += (p.target.pitch - r.rotation.x) * k;
     r.rotation.y += (p.target.yaw - r.rotation.y) * k;
     r.rotation.z += (p.target.roll - r.rotation.z) * k;
-    p.plane.model.position.y = Math.sin(t * 1.6 + p.phase) * 0.25;
     p.restK = (p.restK || 0) + ((p.rest || 0) - (p.restK || 0)) * Math.min(1, dt * 2.2);
-    flyerPose(p.plane, t, p.phase, 0, p.target.pitch, p.restK);
+    // ground life syncs too — friends walk, run, sit and stargaze beside you
+    const md = p.md || 0;
+    const bl = Math.min(1, dt * 3);
+    p.gk = (p.gk || 0) + ((md >= 1 ? 1 : 0) - (p.gk || 0)) * bl;
+    p.mvK = (p.mvK || 0) + ((md === 2 || md === 3 ? 1 : 0) - (p.mvK || 0)) * bl;
+    p.runKk = (p.runKk || 0) + ((md === 3 ? 1 : 0) - (p.runKk || 0)) * bl;
+    p.sitKk = (p.sitKk || 0) + ((md === 4 ? 1 : 0) - (p.sitKk || 0)) * bl;
+    p.lieKk = (p.lieKk || 0) + ((md === 5 ? 1 : 0) - (p.lieKk || 0)) * bl;
+    p.wph = (p.wph || 0) + dt * (md === 3 ? 8.8 : 5.4) * p.mvK;
+    p.plane.model.position.y =
+      Math.sin(t * 1.6 + p.phase) * 0.25 * (1 - p.gk)
+      + (Math.abs(Math.sin(p.wph)) * (0.1 + p.runKk * 0.13) * p.mvK
+         + Math.sin(t * 1.7 + p.phase) * 0.03 * (1 - p.mvK)) * p.gk;
+    flyerPose(p.plane, t, p.phase, 0, p.target.pitch, p.restK,
+      { gk: p.gk, ph: p.wph, mv: p.mvK, runK: p.runKk, sitK: p.sitKk, lieK: p.lieKk });
     p.plane.aura.scale.setScalar(8 + Math.min(p.wishes || 0, 30) * 0.3);
     p.plane.aura.material.opacity = 0.3 + Math.min(p.wishes || 0, 20) * 0.02;
     updateBuddyTag(p, r);
@@ -2228,10 +2453,10 @@ renderer.setAnimationLoop(() => {
   // aurora waves + nav-light blinking
   for (const r of auroraRibbons) {
     r.material.uniforms.time.value = t;
-    r.material.uniforms.amp.value = cur.aurora * (0.8 + 0.2 * Math.sin(t * 0.13 + r.material.uniforms.phase.value));
+    // the aurora leans in for anyone lying back to watch
+    r.material.uniforms.amp.value = cur.aurora * (1 + lieK * 0.45 + restAmt * 0.2)
+      * (0.8 + 0.2 * Math.sin(t * 0.13 + r.material.uniforms.phase.value));
   }
-  vilMat.uniforms.time.value = t;
-  villages.visible = vilMat.uniforms.globalOp.value > 0.02;
   const st = t % 1.6;
   navMats.strobe.opacity = (st < .07 || (st > .16 && st < .23)) ? 1 : .12;
   navMats.red.opacity = navMats.green.opacity = .6 + .4 * Math.sin(t * 3.4);
@@ -2270,6 +2495,28 @@ renderer.setAnimationLoop(() => {
   updateBirds(dt, t, state.pos.x, state.pos.z);
   updateCity(state.pos.x, state.pos.z);
   lerpScene(dt);
+
+  // ----- deep in the pines: the air thickens, moonlight leans through -----
+  {
+    const gh = terrainH(state.pos.x, state.pos.z);
+    const inForest = forestMask(state.pos.x, state.pos.z) > 0.5
+      && gh > 1 && gh < 85 && (state.pos.y - gh) < 30 ? 1 : 0;
+    forestK += (inForest - forestK) * Math.min(1, dt * 1.1);
+    if (forestK > 0.02) {
+      scene.fog.near = cur.fogNear * (1 - forestK * 0.72);
+      scene.fog.far = cur.fogFar * (1 - forestK * 0.55);
+      scene.fog.color.lerp(silverCol, forestK * 0.12);   // a breath of moonlit haze
+    }
+    for (const m of shafts) {
+      m.visible = forestK > 0.03 && cur.moonTex > 0.1;
+      if (!m.visible) continue;
+      m.material.opacity = forestK * cur.moonTex
+        * (0.07 + 0.05 * Math.sin(t * 0.31 + m.userData.phase));
+      if (Math.hypot(m.position.x - state.pos.x, m.position.z - state.pos.z) > 130) {
+        placeShaft(m, state.pos.x, state.pos.z);
+      }
+    }
+  }
 
   // roads + traffic (city scene)
   roads.visible = cur.city > 0.03;
@@ -2321,7 +2568,7 @@ renderer.setAnimationLoop(() => {
   fireflies.visible = flyMat.uniforms.globalOp.value > 0.03;
   for (const m of mists) {
     m.position.x += m.userData.drift * dt;
-    m.material.opacity = cur.stars * 0.16 * hillScale;
+    m.material.opacity = cur.stars * (0.16 + forestK * 0.24) * hillScale;   // mist thickens under the pines
     if (Math.hypot(m.position.x - state.pos.x, m.position.z - state.pos.z) > 750) {
       const a = Math.random() * Math.PI * 2, r = 250 + Math.random() * 400;
       m.position.set(state.pos.x - Math.sin(a) * r, 0, state.pos.z - Math.cos(a) * r);
@@ -2338,9 +2585,13 @@ renderer.setAnimationLoop(() => {
     p.setXYZ(1, shootPos.x - shootVel.x * 0.14, shootPos.y - shootVel.y * 0.14, shootPos.z - shootVel.z * 0.14);
     p.needsUpdate = true;
     shootMat.opacity = Math.sin(Math.min(1, 1 - shootLife / 1.1) * Math.PI) * cur.stars;
-    if (shootLife <= 0) { shootMat.opacity = 0; shootWait = 4 + Math.random() * 8; }
+    if (shootLife <= 0) {
+      shootMat.opacity = 0;
+      // stargazers get a generous sky — shooting stars come often while you lie back
+      shootWait = lieK > 0.5 ? 1.2 + Math.random() * 2.5 : 4 + Math.random() * 8;
+    }
   } else if (cur.stars > 0.4) {
-    shootWait -= dt;
+    shootWait -= dt * (1 + lieK * 2.5);
     if (shootWait <= 0) {
       shootLife = 1.1;
       const a = Math.random() * Math.PI * 2;
@@ -2379,15 +2630,19 @@ renderer.setAnimationLoop(() => {
           `<br>${medal[i] || (i + 1) + '.'} ${esc(r.name)} · ${r.n}`).join('');
       }
     }
-    statsEl.innerHTML = `⛰️ ${Math.round(state.pos.y)} m<br>💨 ${boosting ? 55 : 26} m/s${wishLine}${extra}${board}`;
+    const modeLine = mode === 'fly' ? `💨 ${boosting ? 55 : 26} m/s`
+      : groundSit === 2 ? '🌙 stargazing' : groundSit === 1 ? '🪑 sitting'
+      : moveAmt > 0.25 ? (runK > 0.5 ? '🏃 11 m/s' : '🚶 5 m/s') : '🧍 standing';
+    statsEl.innerHTML = `⛰️ ${Math.round(state.pos.y)} m<br>${modeLine}${wishLine}${extra}${board}`;
   }
 
   renderer.render(scene, camera);
 });
 
 // tiny debug handle for automated tests
-window.__sky = { camDrag, touchInput, players, state, TREE_POS, LANTERNS,
-  get wishes() { return wishes; }, get released() { return released; } };
+window.__sky = { camDrag, touchInput, players, state, TREE_POS, LANTERNS, terrainH, forestMask, land, takeoff, setSit,
+  get wishes() { return wishes; }, get released() { return released; },
+  get mode() { return mode; }, get groundSit() { return groundSit; }, get forestK() { return forestK; } };
 </script>
 </body>
 </html>
