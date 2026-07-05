@@ -550,6 +550,9 @@ function nSmooth(x, z) {
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
 let hillScale = 1;   // terrain flattens in the city scene so towers sit on level ground
+// the Friends' Overlook terrace — the pointed summit is levelled into a small
+// flat shelf so the gathering stands true (armed once the summit is found)
+const PLATEAU = { x: 0, z: 0, h: 0, on: 0 };
 // ridged noise raises long mountain chains; a broad "massif" mask decides where
 // ranges climb high and where valleys open up between them
 function terrainH(x, z) {
@@ -559,7 +562,15 @@ function terrainH(x, z) {
   const massif = nSmooth(x * 0.0009 + 5.2, z * 0.0009 + 77.8);
   const rolling = (nSmooth(x * 0.004 + 13.7, z * 0.004 + 91.3) - 0.5) * 34
                 + (nSmooth(x * 0.013 + 3.1, z * 0.013 + 17.9) - 0.5) * 7;
-  return (ridge * (40 + massif * 150) + rolling - 12) * hillScale;
+  let h = (ridge * (40 + massif * 150) + rolling - 12) * hillScale;
+  if (PLATEAU.on) {
+    const d = Math.hypot(x - PLATEAU.x, z - PLATEAU.z);
+    if (d < 64) {   // dead flat to 30m, then feathered back into the mountainside
+      const t = Math.max(0, Math.min(1, (d - 30) / 34));
+      h += (PLATEAU.h * hillScale - h) * (1 - t * t * (3 - 2 * t));
+    }
+  }
+  return h;
 }
 // the drawn ground is terrainH sampled every G_STEP metres and linearly
 // interpolated between vertices — feet must stand on the mesh the eye sees,
@@ -668,6 +679,7 @@ function updateTrees(cx, cz) {
     for (let k = 0; k < perCell && n < TREE_N; k++) {
       const x = bx + (rnd() - .5) * CELL * 0.95;
       const z = bz + (rnd() - .5) * CELL * 0.95;
+      if (PLATEAU.on && Math.hypot(x - PLATEAU.x, z - PLATEAU.z) < 46) continue;   // the terrace stays open
       const h = terrainH(x, z);
       if (h < 1 || h > 86) continue;                  // between the lakes and the snowline
       if (Math.abs(terrainH(x + 7, z) - h) > 7.5) continue;   // not on cliff faces
@@ -828,6 +840,59 @@ function buildChair() {
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
   return g;
 }
+// a multi-seat couch — one shared back and cushion, armrests only at the ends,
+// legs at every seat boundary so a wide sofa still reads as sturdy
+function buildSofa(n) {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshLambertMaterial({ color: 0x7a5638, emissive: 0x1c1008 });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x54381f, emissive: 0x120a05 });
+  const cushion = new THREE.MeshLambertMaterial({ color: 0x8a6a4a, emissive: 0x1e150c });
+  const w = n * 1.5;
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(w, 0.18, 1.25), cushion);
+  seat.position.y = 1.0;
+  for (let k = 0; k < n; k++) {   // seam lines between cushions
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.19, 1.26), dark);
+    seam.position.set(-w / 2 + k * 1.5, 1.0, 0);
+    if (k > 0) g.add(seam);
+  }
+  const back = new THREE.Mesh(new THREE.BoxGeometry(w, 1.5, 0.16), wood);
+  back.position.set(0, 1.78, 0.58);
+  back.rotation.x = 0.1;
+  g.add(seat, back);
+  for (const lx of [-w / 2 + 0.09, w / 2 - 0.09]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.55, 1.25), dark);
+    arm.position.set(lx, 1.28, 0);
+    g.add(arm);
+  }
+  for (let k = 0; k <= n; k++) for (const lz of [-0.5, 0.5]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.9, 6), dark);
+    leg.position.set(-w / 2 + k * 1.5, 0.45, lz);
+    g.add(leg);
+  }
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return g;
+}
+// a low chaise — lie flat, headrest tilted back, made for watching the moon
+// rather than the fire
+function buildLounge() {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshLambertMaterial({ color: 0x7a5638, emissive: 0x1c1008 });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x54381f, emissive: 0x120a05 });
+  const cushion = new THREE.MeshLambertMaterial({ color: 0x8a6a4a, emissive: 0x1e150c });
+  const bed = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.22, 3.2), cushion);
+  bed.position.y = 0.62;
+  const rest = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.0, 0.2), wood);
+  rest.position.set(0, 0.98, -1.62);
+  rest.rotation.x = -0.55;   // reclined, so lying back the eyes already lift toward the sky
+  g.add(bed, rest);
+  for (const lz of [-1.35, -0.4, 0.5, 1.35]) for (const lx of [-0.62, 0.62]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.5, 6), dark);
+    leg.position.set(lx, 0.25, lz);
+    g.add(leg);
+  }
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return g;
+}
 const siteFlames = [];   // warm lights that breathe in the loop
 function siteBeacon(x, y, z, big) {
   // starts well overhead so sitters are never inside the glow, visible for miles
@@ -864,6 +929,8 @@ function siteLantern(x, y, z) {
 const CHAIRS = [];   // {sx, sz, gy, yaw, circle} — sit anchors, shared by every client
 {
   const circleAt = findPeak(240, 820, 0, 0, null);
+  // level the summit into a terrace before anything is placed on it
+  PLATEAU.x = circleAt.x; PLATEAU.z = circleAt.z; PLATEAU.h = circleAt.h; PLATEAU.on = 1;
   const spots = [circleAt];
   [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([qx, qz]) => {
     const p = findPeak(300, 1050, qx, qz, spots);
@@ -881,19 +948,49 @@ const CHAIRS = [];   // {sx, sz, gy, yaw, circle} — sit anchors, shared by eve
     siteBeacon(p.x, gy, p.z, false);
     CHAIRS.push({ sx: p.x, sz: p.z, gy, yaw: MOON_YAW, circle: false });
   }
-  // the Friends' Overlook — five chairs in a gentle arc, fire out front
+  // the Friends' Overlook — a proper terrace, not a peak: a round deck marks
+  // the flattened summit, then a sofa and two armchairs settle onto it level
   const c = circleAt;
   const cgy = meshGroundH(c.x, c.z);
-  for (let k = -2; k <= 2; k++) {
-    const a = MOON_YAW + k * 0.44;                 // fanned out behind the fire
+  const deck = new THREE.Mesh(new THREE.CylinderGeometry(15, 15.6, 0.3, 28),
+    new THREE.MeshLambertMaterial({ color: 0x6b4a2f, emissive: 0x140d06 }));
+  deck.position.set(c.x, cgy + 0.02, c.z);
+  deck.receiveShadow = true;
+  scene.add(deck);
+  const right = { x: Math.cos(MOON_YAW), z: -Math.sin(MOON_YAW) };   // sideways along the sofa's face
+  const sofaCx = c.x + Math.sin(MOON_YAW) * 4.6, sofaCz = c.z + Math.cos(MOON_YAW) * 4.6;
+  const sofaGy = meshGroundH(sofaCx, sofaCz);
+  const sofa = buildSofa(3);
+  sofa.position.set(sofaCx, sofaGy - 0.06, sofaCz);
+  sofa.rotation.y = MOON_YAW;
+  scene.add(sofa);
+  for (let k = -1; k <= 1; k++) {
+    const x = sofaCx + right.x * k * 1.5, z = sofaCz + right.z * k * 1.5;
+    CHAIRS.push({ sx: x, sz: z, gy: sofaGy, yaw: MOON_YAW, circle: true });
+  }
+  for (const k of [-2, 2]) {                      // two armchairs flanking the sofa
+    const a = MOON_YAW + k * 0.44;
     const x = c.x + Math.sin(a) * 4.6, z = c.z + Math.cos(a) * 4.6;
     const gy = meshGroundH(x, z);
-    const yaw = MOON_YAW + k * 0.12;               // each turned a whisper outward
+    const yaw = MOON_YAW + k * 0.12;              // turned a whisper outward
     const chair = buildChair();
     chair.position.set(x, gy - 0.06, z);
     chair.rotation.y = yaw;
     scene.add(chair);
     CHAIRS.push({ sx: x, sz: z, gy, yaw, circle: true });
+  }
+  // a chaise lounge off to the side, facing the moon straight on — lie back
+  // here and the sky opens right above you
+  {
+    const a = MOON_YAW + 1.9;
+    const lx = c.x + Math.sin(a) * 8.6, lz = c.z + Math.cos(a) * 8.6;
+    const lgy = meshGroundH(lx, lz);
+    const lounge = buildLounge();
+    lounge.position.set(lx, lgy - 0.06, lz);
+    lounge.rotation.y = MOON_YAW;
+    scene.add(lounge);
+    siteLantern(lx + right.x * 1.4, lgy - 0.05, lz + right.z * 1.4);
+    CHAIRS.push({ sx: lx, sz: lz, gy: lgy, yaw: MOON_YAW, circle: true, lounge: true, seatOff: 1.55, lieOff: 1.05 });
   }
   // campfire between the chairs and the view
   const fx = c.x - Math.sin(MOON_YAW) * 1.6, fz = c.z - Math.cos(MOON_YAW) * 1.6;
@@ -920,8 +1017,8 @@ const CHAIRS = [];   // {sx, sz, gy, yaw, circle} — sit anchors, shared by eve
   siteFlames.push({ mat: fGlow.material, phase: 1.7, base: 0.6, amp: 0.28, flame });
   siteBeacon(c.x, cgy, c.z, true);
 
-  // the overlook board — a hand-painted plank at the end of the chair arc,
-  // greeting everyone who gathers here
+  // the overlook board — a hand-painted plank past the armchairs, greeting
+  // everyone who steps onto the terrace
   const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128;
   const ctx = cv.getContext('2d');
   ctx.fillStyle = '#4a3018'; ctx.fillRect(0, 0, 512, 128);
@@ -956,7 +1053,7 @@ const CHAIRS = [];   // {sx, sz, gy, yaw, circle} — sit anchors, shared by eve
   sign.rotation.y = sa + Math.PI;
   scene.add(sign);
 }
-const CIRCLE = { x: CHAIRS[6].sx, z: CHAIRS[6].sz };   // arc centre chair marks the overlook
+const CIRCLE = { x: CHAIRS[5].sx, z: CHAIRS[5].sz };   // centre sofa seat marks the overlook
 
 // ---------------- Moonlit tarns in the valley floors ----------------
 const LAKE_N = 30;
@@ -1632,9 +1729,10 @@ function updateContextBtn() {
     restBtn.textContent = resting ? '🕊️' : '🧘';
     restBtn.title = resting ? 'Fly again' : 'Rest & watch';
   } else {
-    restBtn.textContent = groundSit === 0 ? '🪑' : groundSit === 1 ? (chairIdx >= 0 ? '🧍' : '🌙') : '🧍';
+    const onLounge = chairIdx >= 0 && CHAIRS[chairIdx].lounge;
+    restBtn.textContent = groundSit === 0 ? '🪑' : groundSit === 1 ? ((chairIdx >= 0 && !onLounge) ? '🧍' : '🌙') : '🧍';
     restBtn.title = groundSit === 0 ? 'Sit down'
-      : groundSit === 1 ? (chairIdx >= 0 ? 'Stand up' : 'Lie back & watch the sky') : 'Stand up';
+      : groundSit === 1 ? ((chairIdx >= 0 && !onLounge) ? 'Stand up' : 'Lie back & watch the sky') : 'Stand up';
   }
 }
 restBtn.onclick = () => {
@@ -1644,12 +1742,14 @@ restBtn.onclick = () => {
 
 function setSit(n) {
   if (mode !== 'ground') return;
-  if (n === 2 && chairIdx >= 0) n = 0;   // from a chair you stand up, not lie back
+  // from a chair you stand up, not lie back — unless it's the lounge, built for exactly that
+  if (n === 2 && chairIdx >= 0 && !CHAIRS[chairIdx].lounge) n = 0;
   groundSit = n;
   if (n === 0) chairIdx = -1;
   if (n === 1) {
     chairIdx = nearestChair(3.8);
     showToast(chairIdx < 0 ? '🪑 Sitting… the mountains breathe with you'
+      : CHAIRS[chairIdx].lounge ? '🛋️ Settling onto the sofa'
       : CHAIRS[chairIdx].circle ? '🔥 The Friends’ Overlook — save the other chairs for them'
       : '🪑 A quiet chair above the world');
   }
@@ -1657,7 +1757,7 @@ function setSit(n) {
     // first gaze catches the moon low in the frame, sky and stars above it
     camDrag.yaw = Math.atan2(-cur.orbPos.x, -cur.orbPos.z) - state.yaw;
     camDrag.pitch = -0.2;
-    showToast('🌙 Eyes on the sky… (move to get up)');
+    showToast(chairIdx >= 0 ? '🌙 Lying back on the sofa, eyes on the moon' : '🌙 Eyes on the sky… (move to get up)');
   }
   updateContextBtn();
   netPublishState();
@@ -2337,7 +2437,7 @@ function updateSiteTags() {
     chairAnchor.position.set(best.sx, best.gy + 8, best.sz);
     updateBuddyTag(chairTag, chairAnchor);
   }
-  fireAnchor.position.set(CIRCLE.x, CHAIRS[6].gy + 8, CIRCLE.z);
+  fireAnchor.position.set(CIRCLE.x, CHAIRS[5].gy + 8, CIRCLE.z);
   updateBuddyTag(fireTag, fireAnchor);
 }
 
@@ -2794,7 +2894,14 @@ function updateWalk(dt, t) {
   let targetY = gy + FOOT_Y - sitK * (FOOT_Y - 1.3) - lieK * (FOOT_Y - 0.95);
   if (chairIdx >= 0) {
     const ch = CHAIRS[chairIdx];
-    targetY = gy + FOOT_Y * (1 - sitK) + (ch.gy - gy + 2.24) * sitK;   // up onto the seat
+    const seatOff = ch.seatOff != null ? ch.seatOff : 2.24;
+    if (ch.lounge) {   // sit on the edge, then recline flat when lying back
+      targetY = gy + FOOT_Y * (1 - sitK) * (1 - lieK)
+              + (ch.gy - gy + seatOff) * sitK * (1 - lieK)
+              + (ch.gy - gy + ch.lieOff) * lieK;
+    } else {
+      targetY = gy + FOOT_Y * (1 - sitK) + (ch.gy - gy + seatOff) * sitK;   // up onto the seat
+    }
   }
   state.pos.y += (targetY - state.pos.y) * Math.min(1, dt * 14);
 
