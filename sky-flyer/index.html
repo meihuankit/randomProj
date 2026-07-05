@@ -271,7 +271,7 @@ const skyMat = new THREE.ShaderMaterial({
   uniforms: {
     topColor: { value: cur.top.clone() }, bottomColor: { value: cur.bottom.clone() },
     sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunColor: { value: cur.orbCol.clone() },
-    sunAmt: { value: 1 }
+    sunAmt: { value: 1 }, time: { value: 0 }
   },
   vertexShader: `varying vec3 vDir;
     void main() {
@@ -279,16 +279,31 @@ const skyMat = new THREE.ShaderMaterial({
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }`,
   fragmentShader: `uniform vec3 topColor; uniform vec3 bottomColor;
-    uniform vec3 sunDir; uniform vec3 sunColor; uniform float sunAmt;
+    uniform vec3 sunDir; uniform vec3 sunColor; uniform float sunAmt; uniform float time;
     varying vec3 vDir;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float vnoise(vec2 p) {
+      vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      float a = hash(i), b = hash(i + vec2(1, 0)), c = hash(i + vec2(0, 1)), d = hash(i + vec2(1, 1));
+      return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+    }
     void main() {
       vec3 d = normalize(vDir);
-      float h = clamp(d.y * 1.6 + 0.25, 0.0, 1.0);
-      vec3 col = mix(bottomColor, topColor, pow(h, 0.8));
+      float h = max(d.y, 0.0);
+      // the air is thickest along the horizon: bright haze band low, clean color high
+      vec3 col = mix(bottomColor, topColor, pow(h, 0.5));
+      col = mix(col, bottomColor * 1.1, pow(1.0 - h, 9.0) * 0.55);
+      // scattering around the orb: tight core, soft aureole, wide atmospheric wash
       float s = max(dot(d, sunDir), 0.0);
-      col += sunColor * pow(s, 26.0) * 0.6 * sunAmt;   // bright halo hugging the orb
-      col += sunColor * pow(s, 4.0) * 0.14 * sunAmt;   // wide atmospheric wash
-      col += bottomColor * pow(1.0 - abs(d.y), 6.0) * 0.28;  // horizon haze band
+      col += sunColor * (pow(s, 300.0) * 1.1 + pow(s, 34.0) * 0.34 + pow(s, 5.0) * 0.12) * sunAmt;
+      // forward scatter pools in the low haze beneath the orb
+      col += sunColor * pow(s, 2.5) * pow(1.0 - h, 5.0) * 0.2 * sunAmt;
+      // barely-there nacreous veil drifting across the upper sky
+      vec2 uv = d.xz / (h + 0.35);
+      float veil = vnoise(uv * 1.7 + time * 0.006) * 0.65 + vnoise(uv * 3.9 - time * 0.009) * 0.35;
+      col += (topColor + sunColor * 0.25) * (veil - 0.55) * 0.05 * smoothstep(0.0, 0.35, h);
+      // dither so the smooth gradients never band
+      col += (hash(gl_FragCoord.xy) - 0.5) * 0.008;
       gl_FragColor = vec4(col, 1.0);
     }`,
   side: THREE.BackSide, depthWrite: false, fog: false
@@ -297,22 +312,53 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(1400, 24, 16), skyMat);
 scene.add(sky);
 
 // ---------------- Stars (two layers: dust + bright twinklers) ----------------
+// each star gets its own color, size and twinkle phase — real skies never blink in unison
 function starField(count, size) {
-  const pos = [];
+  const pos = [], phase = [], mag = [], tint = [];
   for (let i = 0; i < count; i++) {
     const t = Math.random() * Math.PI * 2, p = Math.acos(Math.random() * 0.95);
     const r = 1150;
     pos.push(r * Math.sin(p) * Math.cos(t), r * Math.cos(p), r * Math.sin(p) * Math.sin(t));
+    phase.push(Math.random() * Math.PI * 2);
+    mag.push(0.45 + Math.random() * 0.55);
+    const w = Math.random();   // spectral spread: mostly blue-white, some warm, a few amber giants
+    if (w < 0.62) tint.push(0.78 + Math.random() * 0.16, 0.86 + Math.random() * 0.1, 1);
+    else if (w < 0.88) tint.push(1, 0.96, 0.88);
+    else tint.push(1, 0.78 + Math.random() * 0.08, 0.6);
   }
-  const mat = new THREE.PointsMaterial({ color: 0xffffff, size, sizeAttenuation: false,
-    transparent: true, opacity: cur.stars, fog: false, depthWrite: false });
-  const pts = new THREE.Points(
-    new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)), mat);
+  const geo = new THREE.BufferGeometry()
+    .setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    .setAttribute('phase', new THREE.Float32BufferAttribute(phase, 1))
+    .setAttribute('mag', new THREE.Float32BufferAttribute(mag, 1))
+    .setAttribute('tint', new THREE.Float32BufferAttribute(tint, 3));
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { time: { value: 0 }, globalOp: { value: cur.stars },
+      baseSize: { value: size * renderer.getPixelRatio() } },
+    vertexShader: `attribute float phase; attribute float mag; attribute vec3 tint;
+      uniform float time; uniform float baseSize;
+      varying float vA; varying vec3 vTint;
+      void main() {
+        vTint = tint;
+        float tw = 0.72 + 0.28 * sin(time * (1.2 + phase) + phase * 17.0);
+        float ext = smoothstep(0.0, 0.18, normalize(position).y);  // air swallows stars near the horizon
+        vA = mag * tw * ext;
+        gl_PointSize = baseSize * (0.6 + mag * 0.9) * (0.82 + 0.18 * tw);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `uniform float globalOp; varying float vA; varying vec3 vTint;
+      void main() {
+        float d = length(gl_PointCoord - 0.5) * 2.0;
+        float a = pow(max(0.0, 1.0 - d), 2.2);   // soft round core, gentle bloom skirt
+        gl_FragColor = vec4(vTint, a * vA * globalOp);
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+  });
+  const pts = new THREE.Points(geo, mat);
   scene.add(pts);
   return { pts, mat };
 }
-const starsA = starField(850, 1.7);
-const starsB = starField(130, 3.1);   // the bright ones twinkle out of phase
+const starsA = starField(1300, 2.6);
+const starsB = starField(160, 4.6);   // the bright ones twinkle out of phase
 
 // ---------------- Milky Way band ----------------
 function milkyTexture() {
@@ -328,12 +374,34 @@ function milkyTexture() {
     g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g; ctx.fillRect(0, 0, 1024, 256);
   }
-  for (let i = 0; i < 420; i++) {   // pinprick stars thicken along the band
+  // a brighter, warmer bulge partway along the band — the galactic core
+  for (let i = 0; i < 60; i++) {
+    const x = 660 + (Math.random() + Math.random() - 1) * 190;
+    const y = 128 + (Math.random() + Math.random() - 1) * 42;
+    const r = 18 + Math.random() * 48;
+    const g = ctx.createRadialGradient(x, y, 1, x, y, r);
+    g.addColorStop(0, `rgba(255,224,188,${0.025 + Math.random() * 0.03})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 1024, 256);
+  }
+  for (let i = 0; i < 560; i++) {   // pinprick stars thicken along the band
     ctx.globalAlpha = 0.15 + Math.random() * 0.5;
     ctx.fillStyle = 'rgba(255,255,255,.9)';
     ctx.fillRect(Math.random() * 1024, 128 + (Math.random() + Math.random() - 1) * 70, 1.2, 1.2);
   }
   ctx.globalAlpha = 1;
+  // the Great Rift — a dark dust lane wandering down the middle of the glow
+  // (frequencies are periodic over the 1024px width so the cylinder seam matches)
+  ctx.globalCompositeOperation = 'destination-out';
+  for (let x = 0; x < 1024; x += 6) {
+    const y = 128 + Math.sin(x * Math.PI * 4 / 1024) * 24 + Math.sin(x * Math.PI * 12 / 1024 + 2) * 11;
+    const r = 24 + Math.sin(x * Math.PI * 6 / 1024 + 1.2) * 13;
+    const g = ctx.createRadialGradient(x, y, 1, x, y, r);
+    g.addColorStop(0, 'rgba(0,0,0,.42)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  ctx.globalCompositeOperation = 'source-over';
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = THREE.RepeatWrapping;
   return tex;
@@ -393,10 +461,23 @@ function radialTexture() {
   ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
   return new THREE.CanvasTexture(c);
 }
+// the orb's own bloom: a longer, gentler falloff than the shared radial sprite
+function bloomTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(128, 128, 6, 128, 128, 128);
+  g.addColorStop(0, 'rgba(255,255,255,.95)');
+  g.addColorStop(0.16, 'rgba(255,255,255,.42)');
+  g.addColorStop(0.38, 'rgba(255,255,255,.15)');
+  g.addColorStop(0.68, 'rgba(255,255,255,.045)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
+  return new THREE.CanvasTexture(c);
+}
 const orbGroup = new THREE.Group();
 const orbMat = new THREE.MeshBasicMaterial({ color: cur.orbCol, fog: false, transparent: true, opacity: cur.orb });
 const orb = new THREE.Mesh(new THREE.SphereGeometry(42, 24, 16), orbMat);
-const glowMat = new THREE.SpriteMaterial({ map: radialTexture(), color: cur.orbCol, fog: false,
+const glowMat = new THREE.SpriteMaterial({ map: bloomTexture(), color: cur.orbCol, fog: false,
   transparent: true, opacity: cur.orb * .8, depthWrite: false });
 const glow = new THREE.Sprite(glowMat);
 glow.scale.set(340, 340, 1);
@@ -935,16 +1016,28 @@ for (let i = 0; i < 5; i++) {
 function cloudTexture() {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const ctx = c.getContext('2d');
-  // a few overlapping puffs make a fluffier billow than one radial blob
-  const puffs = [[64, 70, 52], [40, 62, 34], [88, 60, 36], [58, 48, 28], [76, 78, 30]];
+  // a billowing stack of puffs, denser on top and flatter below like real cumulus
+  const puffs = [[64, 74, 50], [38, 68, 33], [90, 66, 35], [54, 52, 27], [78, 50, 25],
+                 [66, 40, 19], [46, 80, 27], [84, 82, 26], [30, 78, 20], [100, 78, 20]];
   for (const [x, y, r] of puffs) {
-    const g = ctx.createRadialGradient(x, y, 4, x, y, r);
-    g.addColorStop(0, 'rgba(255,255,255,.55)');
-    g.addColorStop(0.6, 'rgba(255,255,255,.22)');
+    const g = ctx.createRadialGradient(x, y - r * 0.18, 3, x, y, r);
+    g.addColorStop(0, 'rgba(255,255,255,.5)');
+    g.addColorStop(0.55, 'rgba(255,255,255,.2)');
     g.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 128, 128);
   }
+  // nibble the rim so the silhouette reads as vapour, not stacked circles
+  ctx.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 60; i++) {
+    const a = Math.random() * Math.PI * 2, rr = 44 + Math.random() * 22;
+    const x = 64 + Math.cos(a) * rr, y = 64 + Math.sin(a) * rr * 0.75;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, 4 + Math.random() * 10);
+    g.addColorStop(0, `rgba(0,0,0,${0.12 + Math.random() * 0.2})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+  }
+  ctx.globalCompositeOperation = 'source-over';
   return new THREE.CanvasTexture(c);
 }
 const cloudMat = new THREE.SpriteMaterial({ map: cloudTexture(), color: cur.cloud,
@@ -963,8 +1056,42 @@ for (let i = 0; i < 42; i++) {
   }
   c.position.set((Math.random() - .5) * 1000, 25 + Math.random() * 170, (Math.random() - .5) * 1000);
   c.userData.drift = 0.5 + Math.random();
+  c.userData.phase = Math.random() * Math.PI * 2;   // each cloud breathes on its own clock
   clouds.push(c);
   scene.add(c);
+}
+
+// high cirrus veil — faint wind-combed streaks far overhead, for depth above the puffs
+function cirrusTexture() {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const ctx = c.getContext('2d');
+  for (let i = 0; i < 26; i++) {
+    const y = 10 + Math.random() * 44, len = 60 + Math.random() * 160, x = Math.random() * (256 - len);
+    const g = ctx.createLinearGradient(x, y, x + len, y);
+    const a = 0.05 + Math.random() * 0.08;
+    g.addColorStop(0, 'rgba(255,255,255,0)');
+    g.addColorStop(0.5, `rgba(255,255,255,${a})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.strokeStyle = g; ctx.lineWidth = 1.5 + Math.random() * 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + len / 2, y - 4 - Math.random() * 8, x + len, y);
+    ctx.stroke();
+  }
+  return new THREE.CanvasTexture(c);
+}
+const cirrus = [];
+{
+  const tex = cirrusTexture();
+  for (let i = 0; i < 10; i++) {
+    const m = new THREE.SpriteMaterial({ map: tex, color: cur.cloud, transparent: true,
+      opacity: 0, depthWrite: false });
+    const s = new THREE.Sprite(m);
+    s.scale.set(380 + Math.random() * 320, 55 + Math.random() * 45, 1);
+    s.position.set((Math.random() - .5) * 1400, 290 + Math.random() * 160, (Math.random() - .5) * 1400);
+    s.userData = { drift: 1.5 + Math.random() * 2, phase: Math.random() * Math.PI * 2 };
+    cirrus.push(s);
+    scene.add(s);
+  }
 }
 
 // ---------------- Hot air balloons ----------------
@@ -2834,9 +2961,18 @@ renderer.setAnimationLoop(() => {
     const s = Math.pow(Math.max(0, cloudDirTmp.copy(c.position).sub(state.pos).normalize().dot(moonDirTmp)), 5)
             * cur.moonTex;
     m.color.copy(cur.cloud).lerp(silverCol, s * 0.8);
-    m.opacity = cur.cloudOp;
+    m.opacity = cur.cloudOp * (0.82 + 0.18 * Math.sin(t * 0.06 + c.userData.phase));
   }
   recycleClouds();
+  for (const s of cirrus) {   // the high veil rides a faster wind
+    s.position.x += s.userData.drift * dt;
+    s.material.color.copy(cur.cloud);
+    s.material.opacity = cur.cloudOp * (0.1 + 0.05 * Math.sin(t * 0.05 + s.userData.phase));
+    if (Math.hypot(s.position.x - state.pos.x, s.position.z - state.pos.z) > 1100) {
+      const a = Math.random() * Math.PI * 2, r = 500 + Math.random() * 500;
+      s.position.set(state.pos.x - Math.sin(a) * r, 290 + Math.random() * 160, state.pos.z - Math.cos(a) * r);
+    }
+  }
 
   // aurora waves + nav-light blinking
   for (const r of auroraRibbons) {
@@ -3009,8 +3145,9 @@ renderer.setAnimationLoop(() => {
       shootVel.set((Math.random() - .5) * 300, -140 - Math.random() * 80, (Math.random() - .5) * 300);
     }
   }
-  starsA.mat.opacity = cur.stars * (0.88 + 0.12 * Math.sin(t * 2.7));
-  starsB.mat.opacity = cur.stars * (0.7 + 0.3 * Math.sin(t * 1.9 + 2.1));
+  skyMat.uniforms.time.value = t;
+  starsA.mat.uniforms.time.value = t; starsA.mat.uniforms.globalOp.value = cur.stars;
+  starsB.mat.uniforms.time.value = t; starsB.mat.uniforms.globalOp.value = cur.stars;
 
   // world anchors follow the plane
   sky.position.copy(state.pos);
