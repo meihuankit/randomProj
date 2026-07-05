@@ -748,10 +748,17 @@ const siteFlames = [];   // warm lights that breathe in the loop
 function siteBeacon(x, y, z, big) {
   // starts well overhead so sitters are never inside the glow, visible for miles
   const pillar = new THREE.Mesh(new THREE.CylinderGeometry(big ? 3.6 : 2.4, big ? 5 : 3.4, 250, 10, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: big ? 0.05 : 0.038, fog: false,
+    new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: big ? 0.09 : 0.065, fog: false,
       depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
   pillar.position.set(x, y + 165, z);
-  scene.add(pillar);
+  // and a warm star of firelight on the summit itself — it cuts through the
+  // fog, so from anywhere in the night you can pick out the watching places
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(), color: 0xffc98a,
+    fog: false, transparent: true, opacity: 0.4, depthWrite: false, blending: THREE.AdditiveBlending }));
+  halo.scale.set(big ? 26 : 19, big ? 26 : 19, 1);
+  halo.position.set(x, y + 6, z);
+  scene.add(pillar, halo);
+  siteFlames.push({ mat: halo.material, phase: Math.random() * 6.28, base: 0.34, amp: 0.14 });
 }
 function siteLantern(x, y, z) {
   const g = new THREE.Group();
@@ -2129,21 +2136,42 @@ function updateBuddyTag(p, r) {
 }
 
 // same edge indicator for the Wishing Tree while you're carrying wishes
-const treeTag = { name: '🌳 Wishing Tree' };
-{
+function mkEdgeTag(name, color) {
   const tag = document.createElement('div');
   tag.className = 'buddy';
-  tag.style.color = '#aec4ff';
+  tag.style.color = color;
   tag.innerHTML = '<span class="arr">➤</span><span class="txt"></span>';
   tag.style.display = 'none';
   document.getElementById('buddies').appendChild(tag);
-  treeTag.tag = tag; treeTag.tagArr = tag.firstChild; treeTag.tagTxt = tag.lastChild;
+  return { name, tag, tagArr: tag.firstChild, tagTxt: tag.lastChild };
 }
+const treeTag = mkEdgeTag('🌳 Wishing Tree', '#aec4ff');
 const treeAnchor = { position: new THREE.Vector3() };
 function updateTreeTag() {
   if (!flying || wishes === 0) { treeTag.tag.style.display = 'none'; return; }
   treeAnchor.position.copy(TREE_POS).setY(TREE_POS.y + 24);
   updateBuddyTag(treeTag, treeAnchor);
+}
+
+// so nobody wonders which mountains hold the chairs: gentle finders for the
+// nearest quiet chair and for the Friends' Overlook
+const chairTag = mkEdgeTag('🪑 quiet chair', '#ffd9a0');
+const fireTag = mkEdgeTag('🔥 Friends’ Overlook', '#ffb066');
+const chairAnchor = { position: new THREE.Vector3() }, fireAnchor = { position: new THREE.Vector3() };
+function updateSiteTags() {
+  if (!flying || lieK > 0.5) { chairTag.tag.style.display = fireTag.tag.style.display = 'none'; return; }
+  let best = null, bd = 1e9;
+  for (const c of CHAIRS) {
+    if (c.circle) continue;
+    const d = Math.hypot(c.sx - state.pos.x, c.sz - state.pos.z);
+    if (d < bd) { bd = d; best = c; }
+  }
+  if (best) {
+    chairAnchor.position.set(best.sx, best.gy + 8, best.sz);
+    updateBuddyTag(chairTag, chairAnchor);
+  }
+  fireAnchor.position.set(CIRCLE.x, CHAIRS[6].gy + 8, CIRCLE.z);
+  updateBuddyTag(fireTag, fireAnchor);
 }
 
 // ---------------- Room chat — small words across a big sky ----------------
@@ -2779,6 +2807,7 @@ renderer.setAnimationLoop(() => {
   }
   updateWishes(dt, t);
   updateTreeTag();
+  updateSiteTags();
   // contrails belong to the sky — they fade the moment feet touch ground
   trailL.mesh.material.opacity = trailR.mesh.material.opacity = Math.max(0, 1 - gk * 2);
   for (const p of players.values()) {
