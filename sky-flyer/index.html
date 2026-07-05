@@ -175,7 +175,8 @@ addEventListener('error', () => {
   <div class="sub">Moonlit mountains, a dreaming forest, and nowhere to be.</div>
   <div class="story">🏮 Somewhere below, someone is wishing on a lantern.<br>
   Every lantern light you carry to the great glowing tree <b>completes one wish</b>.<br>
-  You are a <b>Wanderer</b> — fly with your friends, and complete the wishes of the world ✨</div>
+  You are a <b>Wanderer</b> — fly with your friends, and complete the wishes of the world ✨<br>
+  And when your wings tire — <b>chairs wait on the summits</b>, five of them around one fire 🔥</div>
   <div class="mp">
     <div class="row">
       <input id="nameInput" placeholder="Your wanderer name" maxlength="14" autocomplete="off">
@@ -700,6 +701,136 @@ function placeShaft(m, px, pz) {
   m.rotation.y = Math.random() * Math.PI;
 }
 
+// ---------------- Summit chairs — places made for watching ----------------
+// four lone armchairs on four peaks, and on the highest summit of all, the
+// Friends' Overlook: five chairs in an arc around a small fire, facing the
+// moon. Amber pillars mark them across the night.
+const MOON_YAW = Math.atan2(-SCENES[0].orbPos[0], -SCENES[0].orbPos[2]);
+function findPeak(minR, maxR, qx, qz, avoid) {
+  let best = null, bh = -1e9;
+  for (let x = -1100; x <= 1100; x += 22) for (let z = -1100; z <= 1100; z += 22) {
+    if (qx && Math.sign(x) !== qx) continue;
+    if (qz && Math.sign(z) !== qz) continue;
+    const r = Math.hypot(x, z);
+    if (r < minR || r > maxR) continue;
+    if (avoid && avoid.some(p => Math.hypot(p.x - x, p.z - z) < 260)) continue;
+    const h = terrainH(x, z);
+    if (h > bh) { bh = h; best = { x, z, h }; }
+  }
+  return best;
+}
+function buildChair() {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshLambertMaterial({ color: 0x7a5638, emissive: 0x1c1008 });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x54381f, emissive: 0x120a05 });
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.14, 1.25), wood);
+  seat.position.y = 1.08;
+  const back = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.0, 0.12), wood);
+  back.position.set(0, 2.06, 0.66);
+  back.rotation.x = 0.14;
+  g.add(seat, back);
+  for (const [lx, lz] of [[-0.6, -0.5], [0.6, -0.5], [-0.6, 0.55], [0.6, 0.55]]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 1.06, 6), dark);
+    leg.position.set(lx, 0.53, lz);
+    g.add(leg);
+  }
+  for (const lx of [-0.79, 0.79]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 1.15), dark);
+    arm.position.set(lx, 1.6, 0.05);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.46, 6), dark);
+    post.position.set(lx, 1.34, -0.42);
+    g.add(arm, post);
+  }
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return g;
+}
+const siteFlames = [];   // warm lights that breathe in the loop
+function siteBeacon(x, y, z, big) {
+  // starts well overhead so sitters are never inside the glow, visible for miles
+  const pillar = new THREE.Mesh(new THREE.CylinderGeometry(big ? 3.6 : 2.4, big ? 5 : 3.4, 250, 10, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: big ? 0.05 : 0.038, fog: false,
+      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+  pillar.position.set(x, y + 165, z);
+  scene.add(pillar);
+}
+function siteLantern(x, y, z) {
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 2.7, 6),
+    new THREE.MeshLambertMaterial({ color: 0x54381f, emissive: 0x120a05 }));
+  pole.position.y = 1.35;
+  const paper = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.32, 0.72, 7),
+    new THREE.MeshLambertMaterial({ color: 0xffb066, emissive: 0xc76a1e }));
+  paper.position.y = 2.85;
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(), color: 0xffb066,
+    transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending }));
+  glow.scale.set(5.5, 5.5, 1);
+  glow.position.y = 2.85;
+  g.add(pole, paper, glow);
+  g.position.set(x, y, z);
+  scene.add(g);
+  siteFlames.push({ mat: glow.material, phase: Math.random() * 6.28, base: 0.55, amp: 0.2 });
+}
+const CHAIRS = [];   // {sx, sz, gy, yaw, circle} — sit anchors, shared by every client
+{
+  const circleAt = findPeak(240, 820, 0, 0, null);
+  const spots = [circleAt];
+  [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([qx, qz]) => {
+    const p = findPeak(300, 1050, qx, qz, spots);
+    if (p) spots.push(p);
+  });
+  // four quiet chairs, one per quadrant peak
+  for (let i = 1; i < spots.length; i++) {
+    const p = spots[i];
+    const gy = meshGroundH(p.x, p.z);
+    const chair = buildChair();
+    chair.position.set(p.x, gy - 0.06, p.z);
+    chair.rotation.y = MOON_YAW;
+    scene.add(chair);
+    siteLantern(p.x + Math.sin(MOON_YAW + 1.9) * 2.1, gy - 0.05, p.z + Math.cos(MOON_YAW + 1.9) * 2.1);
+    siteBeacon(p.x, gy, p.z, false);
+    CHAIRS.push({ sx: p.x, sz: p.z, gy, yaw: MOON_YAW, circle: false });
+  }
+  // the Friends' Overlook — five chairs in a gentle arc, fire out front
+  const c = circleAt;
+  const cgy = meshGroundH(c.x, c.z);
+  for (let k = -2; k <= 2; k++) {
+    const a = MOON_YAW + k * 0.44;                 // fanned out behind the fire
+    const x = c.x + Math.sin(a) * 4.6, z = c.z + Math.cos(a) * 4.6;
+    const gy = meshGroundH(x, z);
+    const yaw = MOON_YAW + k * 0.12;               // each turned a whisper outward
+    const chair = buildChair();
+    chair.position.set(x, gy - 0.06, z);
+    chair.rotation.y = yaw;
+    scene.add(chair);
+    CHAIRS.push({ sx: x, sz: z, gy, yaw, circle: true });
+  }
+  // campfire between the chairs and the view
+  const fx = c.x - Math.sin(MOON_YAW) * 1.6, fz = c.z - Math.cos(MOON_YAW) * 1.6;
+  const fgy = meshGroundH(fx, fz);
+  const fire = new THREE.Group();
+  const logMat = new THREE.MeshLambertMaterial({ color: 0x4a3018, emissive: 0x1a0d04 });
+  for (let i = 0; i < 3; i++) {
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 1.7, 6), logMat);
+    log.rotation.z = Math.PI / 2;
+    log.rotation.y = i * 1.05;
+    log.position.y = 0.16;
+    fire.add(log);
+  }
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.95, 7),
+    new THREE.MeshBasicMaterial({ color: 0xffc06a, transparent: true, opacity: 0.85, fog: false }));
+  flame.position.y = 0.7;
+  const fGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(), color: 0xff9a4a,
+    transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending }));
+  fGlow.scale.set(9, 9, 1);
+  fGlow.position.y = 0.9;
+  fire.add(flame, fGlow);
+  fire.position.set(fx, fgy, fz);
+  scene.add(fire);
+  siteFlames.push({ mat: fGlow.material, phase: 1.7, base: 0.6, amp: 0.28, flame });
+  siteBeacon(c.x, cgy, c.z, true);
+}
+const CIRCLE = { x: CHAIRS[6].sx, z: CHAIRS[6].sz };   // arc centre chair marks the overlook
+
 // ---------------- Moonlit tarns in the valley floors ----------------
 const LAKE_N = 30;
 const lakeDayCol = new THREE.Color(0x2b6f9e), lakeNightCol = new THREE.Color(0x1c3560);
@@ -1172,45 +1303,50 @@ function flyerPose(f, t, phase, boostK, pitch, restK, g) {
   restK = restK || 0;
   const gk = g ? g.gk : 0;
   const sitK = (g ? g.sitK : 0) * gk, lieK = (g ? g.lieK : 0) * gk;
+  const chairK = g ? (g.chairK || 0) : 0;
+  const sitG = sitK * (1 - chairK);   // knees-up on the grass
+  const sitC = sitK * chairK;         // settled into a summit chair
   const ph = g ? g.ph : 0, mv = g ? g.mv : 0, runK = g ? g.runK : 0;
   const fly = (1 - restK) * (1 - gk);
   const floatK = restK * (1 - gk);
   const standK = gk * (1 - sitK) * (1 - lieK);
   const walkK = standK * mv;
   // shoulders: riding the wind aloft, swinging with the stride on the ground,
-  // reaching forward to rest on the knees when seated
+  // reaching over the knees seated, resting on the armrests in a chair
   const flare = (0.55 - boostK * 0.38 + pitch * 0.35) * fly + 0.2 * floatK
-              + 0.1 * standK + 0.14 * sitK + 0.55 * lieK;
+              + 0.1 * standK + 0.14 * sitG + 0.24 * sitC + 0.55 * lieK;
   const sway = 0.07 * fly + 0.06 * floatK + 0.03 * gk;
   f.armL.rotation.z = -flare + Math.sin(t * 1.4 + phase) * sway;
   f.armR.rotation.z = flare - Math.sin(t * 1.4 + phase + 0.9) * sway;
   const armAir = (-0.3 + boostK * 0.2 - pitch * 0.4) * fly + 0.1 * floatK;
   const armSwing = Math.sin(ph) * (0.5 + runK * 0.4) * mv;
-  f.armL.rotation.x = armAir + (armSwing - runK * 0.45 * mv) * standK + 0.95 * sitK + 0.15 * lieK;
-  f.armR.rotation.x = armAir + (-armSwing - runK * 0.45 * mv) * standK + 0.95 * sitK + 0.15 * lieK;
+  f.armL.rotation.x = armAir + (armSwing - runK * 0.45 * mv) * standK + 0.95 * sitG + 0.4 * sitC + 0.15 * lieK;
+  f.armR.rotation.x = armAir + (-armSwing - runK * 0.45 * mv) * standK + 0.95 * sitG + 0.4 * sitC + 0.15 * lieK;
   // elbows: loose in the wind, pumping on a run, folded over the knees seated
-  const elbBase = 0.28 * fly + 0.42 * floatK + 0.12 * standK + 0.85 * sitK + 0.25 * lieK;
+  const elbBase = 0.28 * fly + 0.42 * floatK + 0.12 * standK + 0.85 * sitG + 0.5 * sitC + 0.25 * lieK;
   f.elbL.rotation.x = elbBase + (0.35 + runK * 0.85) * walkK * (0.55 + 0.45 * Math.sin(ph + Math.PI));
   f.elbR.rotation.x = elbBase + (0.35 + runK * 0.85) * walkK * (0.55 + 0.45 * Math.sin(ph));
-  // legs: trailing kick aloft, striding on the trail, knees hugged up to sit
+  // legs: trailing kick aloft, striding on the trail, knees hugged up on the
+  // grass, thighs level and calves down in a chair
   const kick = 0.09 * fly + 0.04 * floatK;
   const stride = Math.sin(ph) * (0.55 + runK * 0.35) * mv;
   f.legL.rotation.x = -0.08 * fly + 0.14 * floatK + Math.sin(t * 1.15 + phase) * kick
-                    + stride * standK + 1.85 * sitK + 0.06 * lieK;
+                    + stride * standK + 1.85 * sitG + 1.52 * sitC + 0.06 * lieK;
   f.legR.rotation.x = -0.08 * fly + 0.14 * floatK + Math.sin(t * 1.15 + phase + Math.PI) * kick
-                    - stride * standK + 1.85 * sitK + 0.06 * lieK;
+                    - stride * standK + 1.85 * sitG + 1.52 * sitC + 0.06 * lieK;
   // knees: bend hardest as each leg swings through its recovery
-  const kneeBase = -0.14 * fly - 0.35 * floatK - 0.06 * standK - 1.95 * sitK - 0.1 * lieK;
+  const kneeBase = -0.14 * fly - 0.35 * floatK - 0.06 * standK - 1.95 * sitG - 1.5 * sitC - 0.1 * lieK;
   f.kneeL.rotation.x = kneeBase - Math.max(0, -Math.sin(ph - 0.5)) * (0.7 + runK * 0.75) * walkK;
   f.kneeR.rotation.x = kneeBase - Math.max(0, Math.sin(ph - 0.5)) * (0.7 + runK * 0.75) * walkK;
   const flutter = fly + (0.25 + runK * 0.5) * gk;
   f.hem.rotation.x = Math.sin(t * (5.4 + boostK * 3) + phase) * (0.05 + boostK * 0.05) * flutter;
   f.fringe.rotation.x = 0.35 + Math.sin(t * (4.6 + boostK * 3) + phase * 2) * (0.07 + boostK * 0.07) * (flutter + 0.3);
   f.headG.rotation.x = (0.8 + pitch * 0.3) * fly + 0.08 * floatK
-                     + 0.06 * standK + 0.48 * sitK + Math.sin(t * 0.7 + phase) * 0.04;
-  // prone glide <-> upright <-> hunched forward over the knees, watching the
-  // world <-> a runner's lean <-> flat on the grass, face to the stars
-  f.pose.rotation.x = -Math.PI / 2 * fly - 0.24 * sitK - 0.16 * runK * walkK + Math.PI / 2 * 0.96 * lieK;
+                     + 0.06 * standK + 0.48 * sitG + 0.3 * sitC + Math.sin(t * 0.7 + phase) * 0.04;
+  // prone glide <-> upright <-> hunched over the knees <-> leaned back in a
+  // chair <-> a runner's lean <-> flat on the grass, face to the stars
+  f.pose.rotation.x = -Math.PI / 2 * fly - 0.24 * sitG + 0.1 * sitC
+                    - 0.16 * runK * walkK + Math.PI / 2 * 0.96 * lieK;
 }
 const PLANE_COLS = [0xe8654f, 0x4fa3e8, 0x7ac97a, 0xf2c14e, 0xc79bf2, 0xff8fa3, 0x6fd9c8, 0xffa94d];
 const me = buildFlyer(PLANE_COLS[0]);
@@ -1288,7 +1424,17 @@ let groundSit = 0;       // 0 stand/walk · 1 sit · 2 lie back & watch the sky
 let gk = 0, sitK = 0, lieK = 0;          // smoothed blend factors for the pose
 let walkPh = 0, moveAmt = 0, runK = 0;   // walk-cycle phase & intensity
 let groundZoom = 0;      // GTA-style: camera starts close after touchdown, slowly pulls back
+let chairIdx = -1, chairAmt = 0, chairHintAt = -1;   // seated on a summit chair
+let watchToast = 0, showerT = 0, watchers = 0;       // Friends' Overlook magic
 const FOOT_Y = 3.82;     // rig origin sits this far above the soles when standing
+function nearestChair(r) {
+  let best = -1, bd = r;
+  for (let i = 0; i < CHAIRS.length; i++) {
+    const d = Math.hypot(CHAIRS[i].sx - state.pos.x, CHAIRS[i].sz - state.pos.z);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
 
 // barrel roll — pure joy, zero stakes (Space / double-tap the look side)
 let rollAnim = 0, rollFx = 0;
@@ -1312,8 +1458,9 @@ function updateContextBtn() {
     restBtn.textContent = resting ? '🕊️' : '🧘';
     restBtn.title = resting ? 'Fly again' : 'Rest & watch';
   } else {
-    restBtn.textContent = groundSit === 0 ? '🪑' : groundSit === 1 ? '🌙' : '🧍';
-    restBtn.title = groundSit === 0 ? 'Sit down' : groundSit === 1 ? 'Lie back & watch the sky' : 'Stand up';
+    restBtn.textContent = groundSit === 0 ? '🪑' : groundSit === 1 ? (chairIdx >= 0 ? '🧍' : '🌙') : '🧍';
+    restBtn.title = groundSit === 0 ? 'Sit down'
+      : groundSit === 1 ? (chairIdx >= 0 ? 'Stand up' : 'Lie back & watch the sky') : 'Stand up';
   }
 }
 restBtn.onclick = () => {
@@ -1323,8 +1470,15 @@ restBtn.onclick = () => {
 
 function setSit(n) {
   if (mode !== 'ground') return;
+  if (n === 2 && chairIdx >= 0) n = 0;   // from a chair you stand up, not lie back
   groundSit = n;
-  if (n === 1) showToast('🪑 Sitting… the mountains breathe with you');
+  if (n === 0) chairIdx = -1;
+  if (n === 1) {
+    chairIdx = nearestChair(3.8);
+    showToast(chairIdx < 0 ? '🪑 Sitting… the mountains breathe with you'
+      : CHAIRS[chairIdx].circle ? '🔥 The Friends’ Overlook — save the other chairs for them'
+      : '🪑 A quiet chair above the world');
+  }
   else if (n === 2) {
     // first gaze catches the moon low in the frame, sky and stars above it
     camDrag.yaw = Math.atan2(-cur.orbPos.x, -cur.orbPos.z) - state.yaw;
@@ -1338,7 +1492,7 @@ function setSit(n) {
 let boostLatch = false;   // holding 🚀 through a landing shouldn't bounce you back up
 function land() {
   if (mode === 'ground') return;
-  mode = 'ground'; groundSit = 0;
+  mode = 'ground'; groundSit = 0; chairIdx = -1;
   resting = false; restAmt = 0;
   rollAnim = 0; rollFx = 0;
   boostLatch = touchInput.boost;
@@ -1350,7 +1504,7 @@ function land() {
 function takeoff() {
   if (mode === 'fly') return;
   mode = 'fly'; groundSit = 0;
-  sitK = lieK = 0;
+  sitK = lieK = 0; chairIdx = -1; chairAmt = 0;
   flySpd = 20;                       // spring into the air already moving
   state.pitch = 0.42;
   state.pos.y = terrainH(state.pos.x, state.pos.z) + 6;
@@ -1891,7 +2045,7 @@ function updateWishes(dt, t) {
 // Everyone in a room publishes tiny state packets to a public MQTT broker over
 // secure WebSockets and subscribes to the whole room. Plain WSS gets through
 // phone networks and CGNAT where WebRTC (no TURN) never connects.
-const MAX_PLAYERS = 8;
+const MAX_PLAYERS = 10;
 const BROKERS = [
   'wss://broker.emqx.io:8084/mqtt',
   'wss://broker.hivemq.com:8884/mqtt',
@@ -2097,7 +2251,7 @@ function netPublishState() {
   if (!client || !joined) return;
   client.publish(roomTopic() + '/p/' + myId, JSON.stringify({
     n: myName(), w: wishes, q: released, r: restAmt > 0.6 ? 1 : 0,   // resting or auto-hovering
-    md: mode === 'fly' ? 0 : groundSit === 1 ? 4 : groundSit === 2 ? 5
+    md: mode === 'fly' ? 0 : groundSit === 1 ? (chairIdx >= 0 ? 6 : 4) : groundSit === 2 ? 5
       : moveAmt > 0.25 ? (runK > 0.5 ? 3 : 2) : 1,
     p: [+state.pos.x.toFixed(2), +state.pos.y.toFixed(2), +state.pos.z.toFixed(2)],
     yw: +state.yaw.toFixed(3), pt: +state.pitch.toFixed(3), rl: +(state.roll + rollFx).toFixed(3)
@@ -2422,10 +2576,32 @@ function updateWalk(dt, t) {
 
   sitK += ((groundSit === 1 ? 1 : 0) - sitK) * Math.min(1, dt * 3);
   lieK += ((groundSit === 2 ? 1 : 0) - lieK) * Math.min(1, dt * 2.2);
-  // stand on the mesh the eye sees; seat and back sink to their own heights
+  chairAmt += (((chairIdx >= 0 && groundSit === 1) ? 1 : 0) - chairAmt) * Math.min(1, dt * 3);
+  // a nearby chair introduces itself
+  if (groundSit === 0) {
+    const ni = nearestChair(4.4);
+    if (ni >= 0 && ni !== chairHintAt) {
+      chairHintAt = ni;
+      showToast(isTouch ? '🪑 — take the chair' : 'R — take the chair');
+    } else if (ni < 0) chairHintAt = -1;
+  }
+  // settle into the chair: slide onto the seat, turn to face its view
+  if (chairIdx >= 0 && groundSit === 1) {
+    const ch = CHAIRS[chairIdx];
+    const k = Math.min(1, dt * 5);
+    state.pos.x += (ch.sx - state.pos.x) * k;
+    state.pos.z += (ch.sz - state.pos.z) * k;
+    const dy = ((ch.yaw - state.yaw + Math.PI) % 6.2832 + 6.2832) % 6.2832 - Math.PI;
+    state.yaw += dy * k;
+  }
+  // stand on the mesh the eye sees; seat, chair and back each have a height
   const gy = meshGroundH(state.pos.x, state.pos.z);
-  state.pos.y += (gy + FOOT_Y - sitK * (FOOT_Y - 1.3) - lieK * (FOOT_Y - 0.95) - state.pos.y)
-    * Math.min(1, dt * 14);
+  let targetY = gy + FOOT_Y - sitK * (FOOT_Y - 1.3) - lieK * (FOOT_Y - 0.95);
+  if (chairIdx >= 0) {
+    const ch = CHAIRS[chairIdx];
+    targetY = gy + FOOT_Y * (1 - sitK) + (ch.gy - gy + 2.24) * sitK;   // up onto the seat
+  }
+  state.pos.y += (targetY - state.pos.y) * Math.min(1, dt * 14);
 
   rig.position.copy(state.pos);
   rig.rotation.set(state.pitch, state.yaw, state.roll);
@@ -2556,7 +2732,7 @@ renderer.setAnimationLoop(() => {
     boosting = mode === 'fly' ? updateFlight(dt, t) : updateWalk(dt, t);
     gk += ((mode === 'ground' ? 1 : 0) - gk) * Math.min(1, dt * 3.5);
     flyerPose(me, t, 0, boostAmt, state.pitch, restAmt,
-      { gk, ph: walkPh, mv: moveAmt, runK, sitK, lieK });
+      { gk, ph: walkPh, mv: moveAmt, runK, sitK, lieK, chairK: chairAmt });
   } else { // idle drift behind the title screen — riding over the ranges
     state.pos.z -= 8 * dt;
     const gy = terrainH(state.pos.x, state.pos.z);
@@ -2587,7 +2763,8 @@ renderer.setAnimationLoop(() => {
     p.gk = (p.gk || 0) + ((md >= 1 ? 1 : 0) - (p.gk || 0)) * bl;
     p.mvK = (p.mvK || 0) + ((md === 2 || md === 3 ? 1 : 0) - (p.mvK || 0)) * bl;
     p.runKk = (p.runKk || 0) + ((md === 3 ? 1 : 0) - (p.runKk || 0)) * bl;
-    p.sitKk = (p.sitKk || 0) + ((md === 4 ? 1 : 0) - (p.sitKk || 0)) * bl;
+    p.sitKk = (p.sitKk || 0) + ((md === 4 || md === 6 ? 1 : 0) - (p.sitKk || 0)) * bl;
+    p.chairKk = (p.chairKk || 0) + ((md === 6 ? 1 : 0) - (p.chairKk || 0)) * bl;
     p.lieKk = (p.lieKk || 0) + ((md === 5 ? 1 : 0) - (p.lieKk || 0)) * bl;
     p.wph = (p.wph || 0) + dt * (md === 3 ? 8.8 : 5.4) * p.mvK;
     p.plane.model.position.y =
@@ -2595,7 +2772,7 @@ renderer.setAnimationLoop(() => {
       + (Math.abs(Math.sin(p.wph)) * (0.1 + p.runKk * 0.13) * p.mvK
          + Math.sin(t * 1.7 + p.phase) * 0.03 * (1 - p.mvK)) * p.gk;
     flyerPose(p.plane, t, p.phase, 0, p.target.pitch, p.restK,
-      { gk: p.gk, ph: p.wph, mv: p.mvK, runK: p.runKk, sitK: p.sitKk, lieK: p.lieKk });
+      { gk: p.gk, ph: p.wph, mv: p.mvK, runK: p.runKk, sitK: p.sitKk, lieK: p.lieKk, chairK: p.chairKk });
     p.plane.aura.scale.setScalar(8 + Math.min(p.wishes || 0, 30) * 0.3);
     p.plane.aura.material.opacity = 0.3 + Math.min(p.wishes || 0, 20) * 0.02;
     updateBuddyTag(p, r);
@@ -2635,8 +2812,9 @@ renderer.setAnimationLoop(() => {
   // aurora waves + nav-light blinking
   for (const r of auroraRibbons) {
     r.material.uniforms.time.value = t;
-    // the aurora leans in for anyone lying back to watch
-    r.material.uniforms.amp.value = cur.aurora * (1 + lieK * 0.45 + restAmt * 0.2)
+    // the aurora leans in for anyone lying back — and for friends watching together
+    r.material.uniforms.amp.value = cur.aurora
+      * (1 + lieK * 0.45 + restAmt * 0.2 + watchers * 0.16 + (showerT > 0 ? 0.55 : 0))
       * (0.8 + 0.2 * Math.sin(t * 0.13 + r.material.uniforms.phase.value));
   }
   const st = t % 1.6;
@@ -2697,6 +2875,27 @@ renderer.setAnimationLoop(() => {
       if (Math.hypot(m.position.x - state.pos.x, m.position.z - state.pos.z) > 130) {
         placeShaft(m, state.pos.x, state.pos.z);
       }
+    }
+  }
+
+  // ----- the Friends' Overlook: shared watching bends the sky -----
+  {
+    let count = chairIdx >= 0 && groundSit === 1 && CHAIRS[chairIdx].circle ? 1 : 0;
+    for (const p of players.values()) {
+      if ((p.md || 0) === 6 && Math.hypot(p.target.pos.x - CIRCLE.x, p.target.pos.z - CIRCLE.z) < 14) count++;
+    }
+    watchers += (count - watchers) * Math.min(1, dt * 1.5);
+    if (count >= 2 && !(watchToast & 1)) { watchToast |= 1; showToast('✨ Watching together — the sky leans closer'); }
+    if (count >= 5 && !(watchToast & 2)) {
+      watchToast |= 2; showerT = 16;
+      showToast('🌠 Five friends under one sky!');
+      if (releaseChord) releaseChord();
+    }
+    if (showerT > 0) showerT -= dt;
+    // lanterns and the campfire breathe
+    for (const s of siteFlames) {
+      s.mat.opacity = s.base + s.amp * (0.5 + 0.5 * Math.sin(t * 2.6 + s.phase) + 0.22 * Math.sin(t * 7.3 + s.phase * 2));
+      if (s.flame) s.flame.scale.setScalar(0.88 + 0.15 * Math.sin(t * 6.1) + 0.06 * Math.sin(t * 11.7));
     }
   }
 
@@ -2773,7 +2972,7 @@ renderer.setAnimationLoop(() => {
       shootWait = lieK > 0.5 ? 1.2 + Math.random() * 2.5 : 4 + Math.random() * 8;
     }
   } else if (cur.stars > 0.4) {
-    shootWait -= dt * (1 + lieK * 2.5);
+    shootWait -= dt * (1 + lieK * 2.5 + watchers * 0.9 + (showerT > 0 ? 6 : 0));
     if (shootWait <= 0) {
       shootLife = 1.1;
       const a = Math.random() * Math.PI * 2;
@@ -2823,11 +3022,12 @@ renderer.setAnimationLoop(() => {
 });
 
 // tiny debug handle for automated tests
-window.__sky = { camDrag, touchInput, players, state, TREE_POS, LANTERNS, terrainH, meshGroundH, forestMask,
-  land, takeoff, setSit,
+window.__sky = { camDrag, touchInput, players, state, TREE_POS, LANTERNS, CHAIRS, CIRCLE,
+  terrainH, meshGroundH, forestMask, land, takeoff, setSit,
   get wishes() { return wishes; }, get released() { return released; },
   get mode() { return mode; }, get groundSit() { return groundSit; }, get forestK() { return forestK; },
-  get flySpd() { return flySpd; }, get groundZoom() { return groundZoom; } };
+  get flySpd() { return flySpd; }, get groundZoom() { return groundZoom; },
+  get chairIdx() { return chairIdx; }, get watchers() { return watchers; } };
 </script>
 </body>
 </html>
