@@ -77,6 +77,33 @@
     z-index: 6; display: none; border: 1px solid rgba(255,255,255,.15); cursor: pointer;
     background: rgba(8, 14, 34, .5); color: #fff; font-size: 1.1rem; padding: 8px 12px; border-radius: 999px;
   }
+  #chat {
+    position: fixed; left: calc(14px + env(safe-area-inset-left)); bottom: calc(96px + env(safe-area-inset-bottom));
+    z-index: 8; display: none; flex-direction: column; gap: 6px; max-width: min(74vw, 340px);
+  }
+  #chatLog { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: #fff; }
+  #chatLog .line {
+    background: rgba(8,14,34,.55); padding: 4px 11px; border-radius: 11px;
+    width: max-content; max-width: 100%; overflow-wrap: anywhere; line-height: 1.45; transition: opacity 1.5s;
+  }
+  #chatForm { display: none; gap: 6px; }
+  #chatInput {
+    flex: 1; min-width: 0; font-family: inherit; font-size: .95rem; color: #fff; outline: none;
+    background: rgba(8,14,34,.7); border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 8px 14px;
+  }
+  #chatForm button {
+    border: none; cursor: pointer; font-size: 1rem; background: rgba(255,209,102,.9);
+    color: #1d2430; border-radius: 999px; padding: 0 14px;
+  }
+  #chatBtn {
+    position: fixed; left: calc(14px + env(safe-area-inset-left)); bottom: calc(48px + env(safe-area-inset-bottom));
+    z-index: 8; display: none; border: 1px solid rgba(255,255,255,.15); cursor: pointer;
+    background: rgba(8, 14, 34, .5); color: #fff; font-size: 1.1rem; padding: 8px 12px; border-radius: 999px;
+  }
+  @media (pointer: coarse) {
+    #chat { bottom: calc(150px + env(safe-area-inset-bottom)); }
+    #chatBtn { bottom: calc(14px + env(safe-area-inset-bottom)); background: rgba(8,14,34,.32); }
+  }
   #buddies { position: fixed; inset: 0; z-index: 5; pointer-events: none; }
   #buddies .buddy {
     position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 6px;
@@ -169,6 +196,11 @@ addEventListener('error', () => {
 <div id="scenes"></div>
 <button id="soundBtn" title="Sound on/off">🔊</button>
 <button id="restBtn" title="Rest & watch">🧘</button>
+<div id="chat">
+  <div id="chatLog"></div>
+  <form id="chatForm"><input id="chatInput" maxlength="80" placeholder="Say something…" autocomplete="off"><button type="submit">➤</button></form>
+</div>
+<button id="chatBtn" title="Chat">💬</button>
 <div id="joy"><div id="joyKnob"></div></div>
 <div id="boostBtn">🚀</div>
 <div id="toast"></div>
@@ -446,6 +478,16 @@ function terrainH(x, z) {
   const rolling = (nSmooth(x * 0.004 + 13.7, z * 0.004 + 91.3) - 0.5) * 34
                 + (nSmooth(x * 0.013 + 3.1, z * 0.013 + 17.9) - 0.5) * 7;
   return (ridge * (40 + massif * 150) + rolling - 12) * hillScale;
+}
+// the drawn ground is terrainH sampled every G_STEP metres and linearly
+// interpolated between vertices — feet must stand on the mesh the eye sees,
+// not on the ideal curve between its samples, or the wanderer floats
+function meshGroundH(x, z) {
+  const gx = Math.floor(x / G_STEP), gz = Math.floor(z / G_STEP);
+  const fx = x / G_STEP - gx, fz = z / G_STEP - gz;
+  const h00 = terrainH(gx * G_STEP, gz * G_STEP), h10 = terrainH((gx + 1) * G_STEP, gz * G_STEP);
+  const h01 = terrainH(gx * G_STEP, (gz + 1) * G_STEP), h11 = terrainH((gx + 1) * G_STEP, (gz + 1) * G_STEP);
+  return h00 * (1 - fx) * (1 - fz) + h10 * fx * (1 - fz) + h01 * (1 - fx) * fz + h11 * fx * fz;
 }
 // where the pines grow — broad belts with ragged edges
 function forestMask(x, z) {
@@ -1068,39 +1110,50 @@ function buildFlyer(accent) {
   const pendant = new THREE.Mesh(new THREE.OctahedronGeometry(0.09), accentMat);
   pendant.position.set(0, 0.58, -0.45);
 
+  // two-segment limbs with real elbows and knees — capsules read as flesh and
+  // cloth where boxes read as robot
   const mkArm = side => {
     const sh = new THREE.Group();
     sh.position.set(side * 0.85, 0.62, 0);
-    const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.75, 0.55), teeMat);
-    sleeve.position.y = -0.3;
-    const fore = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.05, 0.3), skinMat);
-    fore.position.y = -1.12;
-    const band = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.16, 0.36), accentMat);
-    band.position.y = -1.5;
-    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.32, 0.3), skinMat);
-    hand.position.y = -1.76;
-    sh.add(sleeve, fore, band, hand);
+    const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.72, 0.56), teeMat);
+    sleeve.position.y = -0.28;
+    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.5, 3, 8), skinMat);
+    upper.position.y = -0.75;
+    const elb = new THREE.Group();
+    elb.position.y = -1.05;
+    const fore = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.52, 3, 8), skinMat);
+    fore.position.y = -0.38;
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.15, 0.34), accentMat);
+    band.position.y = -0.63;
+    const hand = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.16, 3, 8), skinMat);
+    hand.position.y = -0.85;
+    elb.add(fore, band, hand);
+    sh.add(sleeve, upper, elb);
     sh.rotation.z = side * 0.55;          // flared out from the body
     sh.rotation.x = -0.3;                 // swept back, riding just above the body line
-    return sh;
+    return { sh, elb };
   };
   const mkLeg = side => {
     const hip = new THREE.Group();
     hip.position.set(side * 0.4, -0.95, 0);
-    const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.58, 1.15, 0.62), pantsMat);
+    const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.29, 0.58, 3, 8), pantsMat);
     thigh.position.y = -0.5;
-    const calf = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.05, 0.54), pantsMat);
-    calf.position.y = -1.5;
+    const knee = new THREE.Group();
+    knee.position.y = -1.02;
+    const calf = new THREE.Mesh(new THREE.CapsuleGeometry(0.24, 0.58, 3, 8), pantsMat);
+    calf.position.y = -0.48;
     const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.92), shoeMat);
-    shoe.position.set(0, -2.12, -0.14);
+    shoe.position.set(0, -1.13, -0.14);
     const sole = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.1, 0.96), soleMat);
-    sole.position.set(0, -2.3, -0.14);
-    hip.add(thigh, calf, shoe, sole);
+    sole.position.set(0, -1.3, -0.14);
+    knee.add(calf, shoe, sole);
+    hip.add(thigh, knee);
     hip.rotation.x = -0.08;
-    return hip;
+    return { hip, knee };
   };
-  const armL = mkArm(-1), armR = mkArm(1);
-  const legL = mkLeg(-1), legR = mkLeg(1);
+  const aL = mkArm(-1), aR = mkArm(1);
+  const lL = mkLeg(-1), lR = mkLeg(1);
+  const armL = aL.sh, armR = aR.sh, legL = lL.hip, legR = lR.hip;
   pose.add(torso, hem, neck, headG, pendant, armL, armR, legL, legR);
   model.traverse(o => { if (o.isMesh) o.castShadow = true; });
   // soft moonlight aura in the player color — grows as they gather wishes
@@ -1109,10 +1162,11 @@ function buildFlyer(accent) {
   const aura = new THREE.Sprite(auraMat);
   aura.scale.set(8, 8, 1);
   model.add(aura);
-  return { rig, model, pose, bodyMat: accentMat, armL, armR, legL, legR, hem, fringe, headG, aura };
+  return { rig, model, pose, bodyMat: accentMat, armL, armR, legL, legR,
+    elbL: aL.elb, elbR: aR.elb, kneeL: lL.knee, kneeR: lR.knee, hem, fringe, headG, aura };
 }
 // living pose — one body, many verbs: prone glide, upright float, walking and
-// running strides, a lean-back sit, and lying flat with eyes on the stars.
+// running strides, a knees-up sit, and lying flat with eyes on the stars.
 // g carries the ground blend: {gk, ph (walk cycle), mv, runK, sitK, lieK}
 function flyerPose(f, t, phase, boostK, pitch, restK, g) {
   restK = restK || 0;
@@ -1122,30 +1176,41 @@ function flyerPose(f, t, phase, boostK, pitch, restK, g) {
   const fly = (1 - restK) * (1 - gk);
   const floatK = restK * (1 - gk);
   const standK = gk * (1 - sitK) * (1 - lieK);
-  // arms: riding the wind aloft, swinging with the stride on the ground
-  const flare = (0.55 - boostK * 0.38 + pitch * 0.35) * fly + 0.16 * floatK
-              + 0.14 * standK + 0.24 * sitK + 0.5 * lieK;
-  const sway = 0.07 * fly + 0.05 * floatK + 0.03 * gk;
+  const walkK = standK * mv;
+  // shoulders: riding the wind aloft, swinging with the stride on the ground,
+  // reaching forward to rest on the knees when seated
+  const flare = (0.55 - boostK * 0.38 + pitch * 0.35) * fly + 0.2 * floatK
+              + 0.1 * standK + 0.14 * sitK + 0.55 * lieK;
+  const sway = 0.07 * fly + 0.06 * floatK + 0.03 * gk;
   f.armL.rotation.z = -flare + Math.sin(t * 1.4 + phase) * sway;
   f.armR.rotation.z = flare - Math.sin(t * 1.4 + phase + 0.9) * sway;
-  const armAir = (-0.3 + boostK * 0.15 - pitch * 0.4) * fly + 0.08 * floatK;
-  const armSwing = Math.sin(ph) * (0.42 + runK * 0.34) * mv;
-  f.armL.rotation.x = armAir + (armSwing + runK * -0.5 * mv) * standK - 0.5 * sitK + 0.12 * lieK;
-  f.armR.rotation.x = armAir + (-armSwing + runK * -0.5 * mv) * standK - 0.5 * sitK + 0.12 * lieK;
-  // legs: trailing kick aloft, striding on the trail, stretched out to rest
-  const kick = 0.09 * fly + 0.035 * floatK;
-  const stride = Math.sin(ph) * (0.5 + runK * 0.3) * mv;
-  f.legL.rotation.x = -0.08 * (1 - gk) + Math.sin(t * 1.15 + phase) * kick
-                    + stride * standK + 1.45 * sitK + 0.04 * lieK;
-  f.legR.rotation.x = -0.08 * (1 - gk) + Math.sin(t * 1.15 + phase + Math.PI) * kick
-                    - stride * standK + 1.45 * sitK + 0.04 * lieK;
+  const armAir = (-0.3 + boostK * 0.2 - pitch * 0.4) * fly + 0.1 * floatK;
+  const armSwing = Math.sin(ph) * (0.5 + runK * 0.4) * mv;
+  f.armL.rotation.x = armAir + (armSwing - runK * 0.45 * mv) * standK + 0.95 * sitK + 0.15 * lieK;
+  f.armR.rotation.x = armAir + (-armSwing - runK * 0.45 * mv) * standK + 0.95 * sitK + 0.15 * lieK;
+  // elbows: loose in the wind, pumping on a run, folded over the knees seated
+  const elbBase = 0.28 * fly + 0.42 * floatK + 0.12 * standK + 0.85 * sitK + 0.25 * lieK;
+  f.elbL.rotation.x = elbBase + (0.35 + runK * 0.85) * walkK * (0.55 + 0.45 * Math.sin(ph + Math.PI));
+  f.elbR.rotation.x = elbBase + (0.35 + runK * 0.85) * walkK * (0.55 + 0.45 * Math.sin(ph));
+  // legs: trailing kick aloft, striding on the trail, knees hugged up to sit
+  const kick = 0.09 * fly + 0.04 * floatK;
+  const stride = Math.sin(ph) * (0.55 + runK * 0.35) * mv;
+  f.legL.rotation.x = -0.08 * fly + 0.14 * floatK + Math.sin(t * 1.15 + phase) * kick
+                    + stride * standK + 1.85 * sitK + 0.06 * lieK;
+  f.legR.rotation.x = -0.08 * fly + 0.14 * floatK + Math.sin(t * 1.15 + phase + Math.PI) * kick
+                    - stride * standK + 1.85 * sitK + 0.06 * lieK;
+  // knees: bend hardest as each leg swings through its recovery
+  const kneeBase = -0.14 * fly - 0.35 * floatK - 0.06 * standK - 1.95 * sitK - 0.1 * lieK;
+  f.kneeL.rotation.x = kneeBase - Math.max(0, -Math.sin(ph - 0.5)) * (0.7 + runK * 0.75) * walkK;
+  f.kneeR.rotation.x = kneeBase - Math.max(0, Math.sin(ph - 0.5)) * (0.7 + runK * 0.75) * walkK;
   const flutter = fly + (0.25 + runK * 0.5) * gk;
   f.hem.rotation.x = Math.sin(t * (5.4 + boostK * 3) + phase) * (0.05 + boostK * 0.05) * flutter;
   f.fringe.rotation.x = 0.35 + Math.sin(t * (4.6 + boostK * 3) + phase * 2) * (0.07 + boostK * 0.07) * (flutter + 0.3);
   f.headG.rotation.x = (0.8 + pitch * 0.3) * fly + 0.08 * floatK
-                     + 0.06 * standK + 0.42 * sitK + Math.sin(t * 0.7 + phase) * 0.04;
-  // prone glide <-> upright <-> leaning back <-> flat on the grass, face to the stars
-  f.pose.rotation.x = -Math.PI / 2 * fly - 0.2 * sitK + Math.PI / 2 * 0.96 * lieK;
+                     + 0.06 * standK + 0.48 * sitK + Math.sin(t * 0.7 + phase) * 0.04;
+  // prone glide <-> upright <-> hunched forward over the knees, watching the
+  // world <-> a runner's lean <-> flat on the grass, face to the stars
+  f.pose.rotation.x = -Math.PI / 2 * fly - 0.24 * sitK - 0.16 * runK * walkK + Math.PI / 2 * 0.96 * lieK;
 }
 const PLANE_COLS = [0xe8654f, 0x4fa3e8, 0x7ac97a, 0xf2c14e, 0xc79bf2, 0xff8fa3, 0x6fd9c8, 0xffa94d];
 const me = buildFlyer(PLANE_COLS[0]);
@@ -1214,13 +1279,16 @@ let trailAcc = 0;
 
 const state = { pos: new THREE.Vector3(0, 70, 0), yaw: 0, pitch: 0, roll: 0 };
 let boostAmt = 0;
+let flySpd = 26;         // actual airspeed — let go of everything and it bleeds to a hover
+let hoverToasted = false;
 
 // ---------------- On the ground: walk, run, sit, lie back ----------------
 let mode = 'fly';        // 'fly' | 'ground'
 let groundSit = 0;       // 0 stand/walk · 1 sit · 2 lie back & watch the sky
 let gk = 0, sitK = 0, lieK = 0;          // smoothed blend factors for the pose
 let walkPh = 0, moveAmt = 0, runK = 0;   // walk-cycle phase & intensity
-const FOOT_Y = 3.8;      // rig origin sits this far above the soles when standing
+let groundZoom = 0;      // GTA-style: camera starts close after touchdown, slowly pulls back
+const FOOT_Y = 3.82;     // rig origin sits this far above the soles when standing
 
 // barrel roll — pure joy, zero stakes (Space / double-tap the look side)
 let rollAnim = 0, rollFx = 0;
@@ -1274,6 +1342,7 @@ function land() {
   resting = false; restAmt = 0;
   rollAnim = 0; rollFx = 0;
   boostLatch = touchInput.boost;
+  groundZoom = 0;                    // camera lands close, then slowly breathes out
   showToast('🥾 You landed');
   setHint();
   updateContextBtn();
@@ -1282,6 +1351,7 @@ function takeoff() {
   if (mode === 'fly') return;
   mode = 'fly'; groundSit = 0;
   sitK = lieK = 0;
+  flySpd = 20;                       // spring into the air already moving
   state.pitch = 0.42;
   state.pos.y = terrainH(state.pos.x, state.pos.z) + 6;
   showToast('🕊️ Into the night');
@@ -1307,6 +1377,7 @@ addEventListener('mouseup', () => camDrag.mouse = false);
 const keys = {};
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'Enter' && joined && flying) { e.preventDefault(); openChat(); return; }
   keys[e.code] = true;
   if (e.code.startsWith('Digit')) {
     const i = +e.code[5] - 1;
@@ -1584,16 +1655,16 @@ let flying = false;
 let hintTimer = null;
 function setHint() {
   const fly = mode === 'fly';
+  const chatHint = joined ? (isTouch ? ' · 💬 chat' : ' &nbsp;·&nbsp; Enter — chat') : '';
   hint.innerHTML = isTouch
-    ? (fly ? 'Left thumb — fly · right — look · 2×tap right — roll · dive to the ground to land 🥾'
-           : 'Joystick — walk · push to the edge — run · 🚀 — fly · 🪑 — sit & watch the sky')
-    : (fly ? '← → steer &nbsp;·&nbsp; ↑ ↓ climb / dive &nbsp;·&nbsp; Shift — glide faster &nbsp;·&nbsp; Space — barrel roll<br>dive to the ground — land &amp; walk &nbsp;·&nbsp; drag mouse — look &nbsp;·&nbsp; R — rest &nbsp;·&nbsp; M — sound'
-           : '↑ ↓ walk &nbsp;·&nbsp; ← → turn &nbsp;·&nbsp; Shift — run &nbsp;·&nbsp; R — sit / lie back / stand<br>Space — fly again &nbsp;·&nbsp; drag mouse — look around');
+    ? (fly ? 'Left thumb — fly · let go — stop &amp; float · right — look · dive to the ground to land 🥾' + chatHint
+           : 'Joystick — walk · push to the edge — run · 🚀 — fly · 🪑 — sit &amp; watch' + chatHint)
+    : (fly ? '← → steer &nbsp;·&nbsp; ↑ ↓ climb / dive &nbsp;·&nbsp; let go of everything — stop &amp; float &nbsp;·&nbsp; Shift — glide faster<br>Space — barrel roll &nbsp;·&nbsp; dive to the ground — land &amp; walk &nbsp;·&nbsp; drag mouse — look' + chatHint
+           : '↑ ↓ walk &nbsp;·&nbsp; ← → turn &nbsp;·&nbsp; Shift — run &nbsp;·&nbsp; R — sit / lie back / stand<br>Space — fly again &nbsp;·&nbsp; drag mouse — look around' + chatHint);
   hint.style.opacity = 1;
   clearTimeout(hintTimer);
   hintTimer = setTimeout(() => hint.style.opacity = 0.25, 12000);
 }
-setHint();
 
 nameInput.value = localStorage.getItem('skydrift-name') || '';
 
@@ -1921,6 +1992,89 @@ function updateTreeTag() {
   updateBuddyTag(treeTag, treeAnchor);
 }
 
+// ---------------- Room chat — small words across a big sky ----------------
+const chatBox = document.getElementById('chat');
+const chatLog = document.getElementById('chatLog');
+const chatForm = document.getElementById('chatForm');
+const chatInput = document.getElementById('chatInput');
+const chatBtn = document.getElementById('chatBtn');
+function chatUI(on) {
+  chatBox.style.display = on ? 'flex' : 'none';
+  chatBtn.style.display = on ? 'block' : 'none';
+  if (flying) setHint();   // the hint line learns about chat
+}
+function openChat() { chatForm.style.display = 'flex'; chatInput.focus(); }
+function closeChat() { chatForm.style.display = 'none'; chatInput.blur(); }
+chatBtn.onclick = () => chatForm.style.display === 'flex' ? closeChat() : openChat();
+chatForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const text = chatInput.value.trim().slice(0, 80);
+  chatInput.value = '';
+  if (!isTouch) closeChat();
+  if (text) sendChat(text);
+});
+chatInput.addEventListener('keydown', e => { if (e.key === 'Escape') closeChat(); });
+
+const hexOf = id => '#' + colorOf(id).toString(16).padStart(6, '0');
+function addChatLine(name, text, colorHex) {
+  const line = document.createElement('div');
+  line.className = 'line';
+  const b = document.createElement('b');
+  b.textContent = name + '  ';
+  b.style.color = colorHex;
+  line.append(b, document.createTextNode(text));
+  chatLog.appendChild(line);
+  while (chatLog.children.length > 6) chatLog.firstChild.remove();
+  setTimeout(() => { line.style.opacity = '0'; }, 13000);
+  setTimeout(() => line.remove(), 15000);
+}
+
+// a paper-thin speech bubble that floats over the speaker's head for a while
+function bubbleOver(f, text) {
+  if (f.bubble) { f.rig.remove(f.bubble); f.bubble.material.map.dispose(); f.bubble.material.dispose(); }
+  const c = document.createElement('canvas'); c.width = 512; c.height = 160;
+  const ctx = c.getContext('2d');
+  ctx.font = '600 30px system-ui, sans-serif';
+  const words = String(text).split(' ');
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    const tryS = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(tryS).width > 430 && cur) { lines.push(cur); cur = w; }
+    else cur = tryS;
+    if (lines.length === 3) { cur = ''; break; }
+  }
+  if (cur && lines.length < 3) lines.push(cur);
+  const bw = Math.min(470, Math.max(...lines.map(l => ctx.measureText(l).width)) + 44);
+  const bh = 26 + lines.length * 38;
+  const bx = (512 - bw) / 2, by = 80 - bh / 2;
+  ctx.fillStyle = 'rgba(12, 18, 40, .82)';
+  ctx.strokeStyle = 'rgba(255,255,255,.42)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 18);
+  else ctx.rect(bx, by, bw, bh);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  lines.forEach((l, i) => ctx.fillText(l, 256, by + 38 + i * 38));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c),
+    transparent: true, depthWrite: false, fog: false }));
+  s.scale.set(15, 4.7, 1);
+  s.position.y = 5.6;
+  f.rig.add(s);
+  f.bubble = s;
+  clearTimeout(f.bubbleTimer);
+  f.bubbleTimer = setTimeout(() => { f.rig.remove(s); f.bubble = null; }, 7000);
+}
+
+function sendChat(text) {
+  if (!client || !joined) return;
+  client.publish(roomTopic() + '/p/' + myId, JSON.stringify({ t: 'chat', n: myName(), m: text }));
+  addChatLine(myName(), text, hexOf(myId));
+  bubbleOver(me, text);
+}
+
 function applyRemoteState(id, d) {
   const p = players.get(id);
   if (!p) return;
@@ -1942,7 +2096,7 @@ function netSendScene(i) {
 function netPublishState() {
   if (!client || !joined) return;
   client.publish(roomTopic() + '/p/' + myId, JSON.stringify({
-    n: myName(), w: wishes, q: released, r: resting ? 1 : 0,
+    n: myName(), w: wishes, q: released, r: restAmt > 0.6 ? 1 : 0,   // resting or auto-hovering
     md: mode === 'fly' ? 0 : groundSit === 1 ? 4 : groundSit === 2 ? 5
       : moveAmt > 0.25 ? (runK > 0.5 ? 3 : 2) : 1,
     p: [+state.pos.x.toFixed(2), +state.pos.y.toFixed(2), +state.pos.z.toFixed(2)],
@@ -1974,6 +2128,14 @@ function onNetMessage(topic, payload) {
     showToast(`✨ ${p ? p.name : 'A wanderer'} set ${d.n} wish${d.n > 1 ? 'es' : ''} free!`);
     treeBurst();
     if (releaseChord) releaseChord();
+    return;
+  }
+  if (d.t === 'chat') {
+    const p = players.get(id);
+    const msg = String(d.m || '').slice(0, 80);
+    if (!msg) return;
+    addChatLine(p ? p.name : (d.n || 'wanderer'), msg, hexOf(id));
+    if (p) bubbleOver(p.plane, msg);
     return;
   }
   if (!Array.isArray(d.p)) return;
@@ -2056,6 +2218,7 @@ function connectRoom(code, asHost, attempt = 0) {
         if (err || joined) return;
         joined = true;
         myBodyMat.color.setHex(colorOf(myId));
+        chatUI(true);                  // words can now cross the room
         netPublishState();             // announce myself right away
         if (asHost) {
           showHostLink();
@@ -2146,8 +2309,18 @@ function updateFlight(dt, t) {
 
   // any firm input wakes you from resting
   if (resting && (Math.abs(steer) > 0.35 || Math.abs(climb) > 0.35 || boost)) setRest(false);
-  restAmt += ((resting ? 1 : 0) - restAmt) * Math.min(1, dt * 2.2);
+  // stop anywhere: give no input and the wind sets you down to a gentle hover;
+  // touch the stick again and you ease back into motion
+  const anyInput = Math.abs(steer) > 0.08 || Math.abs(climb) > 0.08 || boost;
+  const spdT = resting ? 0 : anyInput ? (boost ? 55 : 26) : 0;
+  flySpd += (spdT - flySpd) * Math.min(1, dt * (spdT > flySpd ? 2.2 : 0.55));
+  const hoverK = 1 - Math.min(1, flySpd / 10);
+  restAmt += (Math.max(resting ? 1 : 0, hoverK) - restAmt) * Math.min(1, dt * 2.4);
   const move = 1 - restAmt;
+  if (!hoverToasted && hoverK > 0.9) {
+    hoverToasted = true;
+    showToast('Floating… drag to look anywhere 🧘');
+  }
 
   // responsive: the body answers in a fraction of a second, and the heading
   // turns hard enough to actually go where you point (wider arcs while boosting)
@@ -2157,9 +2330,8 @@ function updateFlight(dt, t) {
   state.pitch += (targetPitch - state.pitch) * Math.min(1, dt * 5);
   state.yaw += state.roll * dt * (boost ? 1.4 : 1.9);
 
-  const speed = (boost ? 55 : 26) * move;
   FWD.set(0, 0, -1).applyEuler(new THREE.Euler(state.pitch, state.yaw, 0, 'YXZ'));
-  state.pos.addScaledVector(FWD, speed * dt);
+  state.pos.addScaledVector(FWD, flySpd * dt);
   state.pos.y += Math.sin(t * 0.8) * dt * 0.9 * restAmt;   // hover bob while resting
 
   // gentle altitude limits — and keep pressing down near the ground to land
@@ -2250,8 +2422,10 @@ function updateWalk(dt, t) {
 
   sitK += ((groundSit === 1 ? 1 : 0) - sitK) * Math.min(1, dt * 3);
   lieK += ((groundSit === 2 ? 1 : 0) - lieK) * Math.min(1, dt * 2.2);
-  const gy = terrainH(state.pos.x, state.pos.z);
-  state.pos.y += (gy + FOOT_Y - sitK * 1.7 - lieK * 2.95 - state.pos.y) * Math.min(1, dt * 9);
+  // stand on the mesh the eye sees; seat and back sink to their own heights
+  const gy = meshGroundH(state.pos.x, state.pos.z);
+  state.pos.y += (gy + FOOT_Y - sitK * (FOOT_Y - 1.3) - lieK * (FOOT_Y - 0.95) - state.pos.y)
+    * Math.min(1, dt * 14);
 
   rig.position.copy(state.pos);
   rig.rotation.set(state.pitch, state.yaw, state.roll);
@@ -2270,11 +2444,13 @@ function updateWalk(dt, t) {
       camDrag.pitch -= camDrag.pitch * ease;
     }
   }
+  // GTA-style: the lens lands tight on your shoulder, then slowly breathes out
+  groundZoom += (1 - groundZoom) * Math.min(1, dt * 0.22);
   const back = lookTmp.copy(CAM_WALK)
-    .multiplyScalar(1 + sitK * 0.45)
+    .multiplyScalar((0.55 + 0.5 * groundZoom) * (1 + sitK * 0.45 + runK * 0.2))
     .applyEuler(new THREE.Euler(camDrag.pitch, state.yaw + camDrag.yaw, 0, 'YXZ'));
   camTarget.copy(state.pos).add(back);
-  camTarget.y = Math.max(camTarget.y, terrainH(camTarget.x, camTarget.z) + 1.4);
+  camTarget.y = Math.max(camTarget.y, meshGroundH(camTarget.x, camTarget.z) + 1.2);
   const povK = sstep(0.25, 0.9, lieK);
   if (povK > 0) {   // slide into your own eyes — a whisper above them, clear of the hair
     eyeTmp.set(0, 0.9 + Math.sin(t * 0.45) * 0.05, 1.05)   // slow breathing under the stars
@@ -2289,7 +2465,8 @@ function updateWalk(dt, t) {
     .lerp(povDir.multiplyScalar(40).add(camera.position), povK);
   camera.lookAt(lookTmp);
 
-  const targetFov = 62 + povK * 12;   // the sky opens up when you lie back
+  const baseFov = 55 + groundZoom * 8;               // widens as the camera pulls back
+  const targetFov = baseFov + povK * (74 - baseFov); // and the sky opens up when you lie back
   if (Math.abs(camera.fov - targetFov) > 0.05) {
     camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3);
     camera.updateProjectionMatrix();
@@ -2425,6 +2602,11 @@ renderer.setAnimationLoop(() => {
   }
   updateWishes(dt, t);
   updateTreeTag();
+  // contrails belong to the sky — they fade the moment feet touch ground
+  trailL.mesh.material.opacity = trailR.mesh.material.opacity = Math.max(0, 1 - gk * 2);
+  for (const p of players.values()) {
+    p.trailL.mesh.material.opacity = p.trailR.mesh.material.opacity = Math.max(0, 1 - (p.gk || 0) * 2);
+  }
   trailAcc += dt;
   if (trailAcc >= 0.045) {
     trailAcc = 0;
@@ -2630,7 +2812,8 @@ renderer.setAnimationLoop(() => {
           `<br>${medal[i] || (i + 1) + '.'} ${esc(r.name)} · ${r.n}`).join('');
       }
     }
-    const modeLine = mode === 'fly' ? `💨 ${boosting ? 55 : 26} m/s`
+    const modeLine = mode === 'fly'
+      ? (flySpd < 3 ? '🧘 floating' : `💨 ${Math.round(flySpd)} m/s`)
       : groundSit === 2 ? '🌙 stargazing' : groundSit === 1 ? '🪑 sitting'
       : moveAmt > 0.25 ? (runK > 0.5 ? '🏃 11 m/s' : '🚶 5 m/s') : '🧍 standing';
     statsEl.innerHTML = `⛰️ ${Math.round(state.pos.y)} m<br>${modeLine}${wishLine}${extra}${board}`;
@@ -2640,9 +2823,11 @@ renderer.setAnimationLoop(() => {
 });
 
 // tiny debug handle for automated tests
-window.__sky = { camDrag, touchInput, players, state, TREE_POS, LANTERNS, terrainH, forestMask, land, takeoff, setSit,
+window.__sky = { camDrag, touchInput, players, state, TREE_POS, LANTERNS, terrainH, meshGroundH, forestMask,
+  land, takeoff, setSit,
   get wishes() { return wishes; }, get released() { return released; },
-  get mode() { return mode; }, get groundSit() { return groundSit; }, get forestK() { return forestK; } };
+  get mode() { return mode; }, get groundSit() { return groundSit; }, get forestK() { return forestK; },
+  get flySpd() { return flySpd; }, get groundZoom() { return groundZoom; } };
 </script>
 </body>
 </html>
