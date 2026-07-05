@@ -646,6 +646,9 @@ const canopyMesh = new THREE.InstancedMesh(pineCanopyGeo,
   new THREE.MeshLambertMaterial({ color: 0x24503e, emissive: 0x081410 }), TREE_N);
 trunkMesh.castShadow = canopyMesh.castShadow = true;
 canopyMesh.receiveShadow = true;
+// instances spread across the world, but the culling sphere is one tree at the
+// origin — walk close and the whole forest vanished. Never cull the forest.
+trunkMesh.frustumCulled = canopyMesh.frustumCulled = false;
 scene.add(trunkMesh, canopyMesh);
 const treeMat4 = new THREE.Matrix4();
 const treeCol = new THREE.Color();
@@ -916,6 +919,42 @@ const CHAIRS = [];   // {sx, sz, gy, yaw, circle} — sit anchors, shared by eve
   scene.add(fire);
   siteFlames.push({ mat: fGlow.material, phase: 1.7, base: 0.6, amp: 0.28, flame });
   siteBeacon(c.x, cgy, c.z, true);
+
+  // the overlook board — a hand-painted plank at the end of the chair arc,
+  // greeting everyone who gathers here
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#4a3018'; ctx.fillRect(0, 0, 512, 128);
+  for (let i = 0; i < 60; i++) {   // plank grain
+    ctx.fillStyle = `rgba(0,0,0,${0.05 + Math.random() * 0.1})`;
+    ctx.fillRect(0, Math.random() * 128, 512, 1 + Math.random() * 2);
+  }
+  ctx.strokeStyle = 'rgba(255,214,150,.45)'; ctx.lineWidth = 5;
+  ctx.strokeRect(8, 8, 496, 112);
+  ctx.font = 'italic bold 44px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffd9a0';
+  ctx.fillText('Badhiya lag rha hei.', 256, 66);
+  const boardTex = new THREE.CanvasTexture(cv);
+  const woodMat = new THREE.MeshLambertMaterial({ color: 0x54381f, emissive: 0x120a05 });
+  // firelight-lit face: the canvas doubles as emissive map so it reads at night
+  const faceMat = new THREE.MeshLambertMaterial({ map: boardTex,
+    emissive: 0xcfa96a, emissiveMap: boardTex, emissiveIntensity: 0.55 });
+  const sign = new THREE.Group();
+  for (const dx of [-2.1, 2.1]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, 3, 6), woodMat);
+    post.position.set(dx, 1.5, 0);
+    sign.add(post);
+  }
+  const board = new THREE.Mesh(new THREE.BoxGeometry(5, 1.3, 0.16),
+    [woodMat, woodMat, woodMat, woodMat, faceMat, woodMat]);   // lettering on the front face only
+  board.position.y = 2.2;
+  sign.add(board);
+  const sa = MOON_YAW + 3 * 0.44;   // one seat past the arc's end, turned in toward the circle
+  const sgx = c.x + Math.sin(sa) * 5.5, sgz = c.z + Math.cos(sa) * 5.5;
+  sign.position.set(sgx, meshGroundH(sgx, sgz), sgz);
+  sign.rotation.y = sa + Math.PI;
+  scene.add(sign);
 }
 const CIRCLE = { x: CHAIRS[6].sx, z: CHAIRS[6].sz };   // arc centre chair marks the overlook
 
@@ -926,6 +965,7 @@ const lakeMat = new THREE.MeshPhongMaterial({ color: 0x16324f, specular: 0xf0f6f
   emissive: 0x060c1e, transparent: true, opacity: 0.92 });
 const lakeMesh = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 28).rotateX(-Math.PI / 2), lakeMat, LAKE_N);
 lakeMesh.receiveShadow = true;
+lakeMesh.frustumCulled = false;   // same origin-sphere culling trap as the forest
 scene.add(lakeMesh);
 function updateLakes(cx, cz) {
   lakeMesh.visible = hillScale > 0.4;
