@@ -77,6 +77,23 @@
     z-index: 6; display: none; border: 1px solid rgba(255,255,255,.15); cursor: pointer;
     background: rgba(8, 14, 34, .5); color: #fff; font-size: 1.1rem; padding: 8px 12px; border-radius: 999px;
   }
+  #teAmoBtn {
+    position: fixed; left: calc(14px + env(safe-area-inset-left)); top: calc(114px + env(safe-area-inset-top));
+    z-index: 6; display: none; border: 1px solid rgba(255,255,255,.15); cursor: pointer;
+    background: rgba(8, 14, 34, .5); color: #fff; font-size: 1.1rem; padding: 8px 12px; border-radius: 999px;
+  }
+  #teAmoBtn.on { background: rgba(255, 140, 200, .85); }
+  #teAmoLockBtn {
+    position: fixed; left: calc(14px + env(safe-area-inset-left)); top: calc(164px + env(safe-area-inset-top));
+    z-index: 6; display: none; border: 1px solid rgba(255,255,255,.15); cursor: pointer;
+    background: rgba(8, 14, 34, .5); color: #fff; font-size: 1.1rem; padding: 8px 12px; border-radius: 999px;
+  }
+  #battBtn {
+    position: fixed; left: calc(14px + env(safe-area-inset-left)); top: calc(214px + env(safe-area-inset-top));
+    z-index: 6; display: none; border: 1px solid rgba(255,255,255,.15); cursor: pointer;
+    background: rgba(8, 14, 34, .5); color: #fff; font-size: 1.1rem; padding: 8px 12px; border-radius: 999px;
+  }
+  #battBtn.on { background: rgba(140, 255, 170, .85); }
   #chat {
     position: fixed; left: calc(14px + env(safe-area-inset-left)); bottom: calc(96px + env(safe-area-inset-bottom));
     z-index: 8; display: none; flex-direction: column; gap: 6px; max-width: min(74vw, 340px);
@@ -141,8 +158,9 @@
       text-align: center; font-size: .74rem; background: rgba(8, 14, 34, .3); padding: 6px 12px; }
     #scenes { display: none; }
     #stats { font-size: .72rem; padding: 4px 10px; background: rgba(8, 14, 34, .3); line-height: 1.45; }
-    #soundBtn, #restBtn { background: rgba(8, 14, 34, .32); border-color: rgba(255,255,255,.12);
+    #soundBtn, #restBtn, #teAmoBtn, #teAmoLockBtn, #battBtn { background: rgba(8, 14, 34, .32); border-color: rgba(255,255,255,.12);
       font-size: 1rem; padding: 7px 10px; }
+    #teAmoBtn.on { background: rgba(255, 140, 200, .85); }
     #boostBtn { width: 64px; height: 64px; font-size: 1.5rem;
       background: rgba(8, 14, 34, .3); border-color: rgba(255,255,255,.16); }
     #joy { border-color: rgba(255,255,255,.16); background: rgba(255,255,255,.03); }
@@ -197,6 +215,9 @@ addEventListener('error', () => {
 <div id="scenes"></div>
 <button id="soundBtn" title="Sound on/off">🔊</button>
 <button id="restBtn" title="Rest & watch">🧘</button>
+<button id="teAmoBtn" title="Te Amo — Siggerr">💜</button>
+<button id="teAmoLockBtn" title="Let friends control the song">🔒</button>
+<button id="battBtn" title="Battery saver — same graphics, fewer frames">🔋</button>
 <div id="chat">
   <div id="chatLog"></div>
   <form id="chatForm"><input id="chatInput" maxlength="80" placeholder="Say something…" autocomplete="off"><button type="submit">➤</button></form>
@@ -432,7 +453,12 @@ const auroraRibbons = [];
       float a = pow(1.0 - vUv.y, 2.0) * smoothstep(0.0, 0.06, vUv.y)
               * smoothstep(0.0, 0.09, vUv.x) * smoothstep(1.0, 0.91, vUv.x)
               * (0.3 + 0.7 * curtain) * amp;
-      vec3 col = mix(vec3(0.28, 1.0, 0.62), vec3(0.62, 0.42, 1.0),
+      // the palette itself dreams: a ~2-minute sweep drifts each ribbon between
+      // aurora green and rose-red, sliding along its length, no two in step
+      float drift = 0.5 + 0.5 * sin(time * 0.05 + phase * 0.7 + vUv.x * 1.3);
+      vec3 lo = mix(vec3(0.28, 1.0, 0.62), vec3(1.0, 0.30, 0.36), drift);
+      vec3 hi = mix(vec3(0.62, 0.42, 1.0), vec3(1.0, 0.52, 0.68), drift);
+      vec3 col = mix(lo, hi,
                      clamp(vUv.y * 1.15 + 0.12 * sin(vUv.x * 5.0 + time * 0.2), 0.0, 1.0));
       gl_FragColor = vec4(col * a, a);
     }`;
@@ -926,6 +952,11 @@ function siteLantern(x, y, z) {
   scene.add(g);
   siteFlames.push({ mat: glow.material, phase: Math.random() * 6.28, base: 0.55, amp: 0.2 });
 }
+// the overlook's gentle nightlife — built in the CHAIRS block, breathed in the main loop
+const fairyMats = [];
+let poolMat = null, emberPts = null, emberMat = null;
+const emberVel = [], emberTop = [], emberHome = [];
+
 const CHAIRS = [];   // {sx, sz, gy, yaw, circle} — sit anchors, shared by every client
 {
   const circleAt = findPeak(240, 820, 0, 0, null);
@@ -1014,44 +1045,116 @@ const CHAIRS = [];   // {sx, sz, gy, yaw, circle} — sit anchors, shared by eve
   fire.add(flame, fGlow);
   fire.position.set(fx, fgy, fz);
   scene.add(fire);
-  siteFlames.push({ mat: fGlow.material, phase: 1.7, base: 0.6, amp: 0.28, flame });
+  siteFlames.push({ mat: fGlow.material, phase: 1.7, base: 0.62, amp: 0.15, flame, calm: 1 });
   siteBeacon(c.x, cgy, c.z, true);
 
   // the overlook board — a hand-painted plank past the armchairs, greeting
   // everyone who steps onto the terrace
-  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128;
+  // the board is a little painting of the night itself — indigo sky, aurora
+  // wisps, a scatter of stars — with the greeting glowing softly out of it
+  const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 256;
   const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#4a3018'; ctx.fillRect(0, 0, 512, 128);
-  for (let i = 0; i < 60; i++) {   // plank grain
-    ctx.fillStyle = `rgba(0,0,0,${0.05 + Math.random() * 0.1})`;
-    ctx.fillRect(0, Math.random() * 128, 512, 1 + Math.random() * 2);
-  }
-  ctx.strokeStyle = 'rgba(255,214,150,.45)'; ctx.lineWidth = 5;
-  ctx.strokeRect(8, 8, 496, 112);
-  ctx.font = 'italic bold 44px Georgia, serif';
+  // simple black & white: a white plate, a thin black frame, plain dark letters
+  ctx.fillStyle = '#f4f4f0'; ctx.fillRect(0, 0, 1024, 256);
+  ctx.strokeStyle = '#141414'; ctx.lineWidth = 12; ctx.strokeRect(14, 14, 996, 228);
+  ctx.strokeStyle = '#141414'; ctx.lineWidth = 3; ctx.strokeRect(34, 34, 956, 188);
+  ctx.font = 'bold 88px Helvetica, Arial, sans-serif';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#ffd9a0';
-  ctx.fillText('Badhiya lag rha hei.', 256, 66);
+  ctx.fillStyle = '#141414';
+  ctx.fillText('Badhiya lag rha hei.', 512, 130);
   const boardTex = new THREE.CanvasTexture(cv);
+  boardTex.anisotropy = 4;   // stays crisp when read from an angle
   const woodMat = new THREE.MeshLambertMaterial({ color: 0x54381f, emissive: 0x120a05 });
-  // firelight-lit face: the canvas doubles as emissive map so it reads at night
+  // softly self-lit so the white plate reads at night without blinding
   const faceMat = new THREE.MeshLambertMaterial({ map: boardTex,
-    emissive: 0xcfa96a, emissiveMap: boardTex, emissiveIntensity: 0.55 });
+    emissive: 0xffffff, emissiveMap: boardTex, emissiveIntensity: 0.6 });
+  // the back face gets the same plate, flipped so the words read the right way
+  const backTex = boardTex.clone();
+  backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.x = -1;
+  backTex.anisotropy = 4;
+  const backMat = new THREE.MeshLambertMaterial({ map: backTex,
+    emissive: 0xffffff, emissiveMap: backTex, emissiveIntensity: 0.6 });
   const sign = new THREE.Group();
   for (const dx of [-2.1, 2.1]) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, 3, 6), woodMat);
-    post.position.set(dx, 1.5, 0);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, 4.2, 6), woodMat);
+    post.position.set(dx, 2.1, -0.24);   // tucked behind the board — wood never crosses the letters
     sign.add(post);
   }
-  const board = new THREE.Mesh(new THREE.BoxGeometry(5, 1.3, 0.16),
-    [woodMat, woodMat, woodMat, woodMat, faceMat, woodMat]);   // lettering on the front face only
-  board.position.y = 2.2;
+  // the board rides high above the chair-backs and heads, nothing between
+  // you and the words
+  const board = new THREE.Mesh(new THREE.BoxGeometry(5, 1.25, 0.16),
+    [woodMat, woodMat, woodMat, woodMat, faceMat, backMat]);   // lettering on both faces
+  board.position.y = 3.4;
   sign.add(board);
+  // a faint white halo BEHIND the board so it still finds you in the dark
+  const signGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(),
+    color: 0xffffff, transparent: true, opacity: 0.1, depthWrite: false,
+    blending: THREE.AdditiveBlending }));
+  signGlow.scale.set(9, 3.8, 1);
+  signGlow.position.set(0, 3.4, -0.45);
+  sign.add(signGlow);
   const sa = MOON_YAW + 3 * 0.44;   // one seat past the arc's end, turned in toward the circle
   const sgx = c.x + Math.sin(sa) * 5.5, sgz = c.z + Math.cos(sa) * 5.5;
   sign.position.set(sgx, meshGroundH(sgx, sgz), sgz);
   sign.rotation.y = sa + Math.PI;
   scene.add(sign);
+
+  // ---- the calm of the place: fairy lights, a warm hush of light, lazy embers ----
+  // fairy lights around the back rim of the deck — the moon-facing side stays open
+  {
+    const R = 14.0, back = MOON_YAW + Math.PI;
+    const postMat = new THREE.MeshLambertMaterial({ color: 0x3a2817, emissive: 0x0d0803 });
+    const posts = [];
+    for (let i = 0; i <= 6; i++) {
+      const a = back - 1.35 + i * 0.45;
+      const px = c.x + Math.sin(a) * R, pz = c.z + Math.cos(a) * R;
+      const py = meshGroundH(px, pz);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 2.4, 5), postMat);
+      post.position.set(px, py + 1.2, pz);
+      scene.add(post);
+      posts.push({ x: px, y: py + 2.35, z: pz });
+    }
+    // three shared materials so the strand twinkles in slow interleaved waves
+    [0xffd9a0, 0xffc27a, 0xffe7c2].forEach(col => fairyMats.push(new THREE.SpriteMaterial({
+      map: radialTexture(), color: col, transparent: true, opacity: 0.6,
+      depthWrite: false, blending: THREE.AdditiveBlending })));
+    for (let i = 0; i < posts.length - 1; i++) {
+      const A = posts[i], B = posts[i + 1];
+      for (let k = 1; k <= 4; k++) {
+        const f = k / 5, sag = Math.sin(f * Math.PI) * 0.55;
+        const bulb = new THREE.Sprite(fairyMats[(i * 4 + k) % 3]);
+        bulb.scale.set(0.6, 0.6, 1);
+        bulb.position.set(A.x + (B.x - A.x) * f, A.y + (B.y - A.y) * f - sag, A.z + (B.z - A.z) * f);
+        scene.add(bulb);
+      }
+    }
+  }
+  // a pool of warm light breathing over the whole terrace — visible from the air
+  // as a soft "someone's home" glow on the summit
+  poolMat = new THREE.SpriteMaterial({ map: radialTexture(), color: 0xffb677,
+    transparent: true, opacity: 0.14, depthWrite: false, blending: THREE.AdditiveBlending });
+  const pool = new THREE.Sprite(poolMat);
+  pool.scale.set(36, 16, 1);
+  pool.position.set(c.x, cgy + 3.4, c.z);
+  scene.add(pool);
+  // lazy embers drifting up off the fire, swaying as they climb
+  {
+    const n = 24, arr = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const hx = (Math.random() - .5) * 0.5, hz = (Math.random() - .5) * 0.5;
+      arr[i * 3] = hx; arr[i * 3 + 1] = Math.random() * 2.6; arr[i * 3 + 2] = hz;
+      emberHome.push([hx, hz]);
+      emberVel.push(0.4 + Math.random() * 0.5);
+      emberTop.push(2.6 + Math.random() * 1.6);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    emberMat = new THREE.PointsMaterial({ color: 0xffb060, size: 0.28, transparent: true,
+      opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending });
+    emberPts = new THREE.Points(g, emberMat);
+    emberPts.position.set(fx, fgy + 0.5, fz);
+    scene.add(emberPts);
+  }
 }
 const CIRCLE = { x: CHAIRS[5].sx, z: CHAIRS[5].sz };   // centre sofa seat marks the overlook
 
@@ -1817,6 +1920,21 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => keys[e.code] = false);
 
+// buttons are for fingers only — a clicked button keeps keyboard focus, so
+// Space (fly / barrel roll) would silently "click" it again: muting the music,
+// flipping battery saver… blur on click, and never let keys press buttons
+addEventListener('click', e => {
+  const b = e.target && e.target.closest && e.target.closest('button');
+  if (b) b.blur();
+});
+addEventListener('keydown', e => {
+  if ((e.code === 'Space' || e.code === 'Enter') &&
+      document.activeElement && document.activeElement.tagName === 'BUTTON') {
+    e.preventDefault();
+    document.activeElement.blur();
+  }
+}, true);
+
 // ---------------- Input: touch (joystick + boost) ----------------
 // left half of the screen flies, right half looks around — both at once works
 const touchInput = { x: 0, y: 0, boost: false };
@@ -1880,7 +1998,7 @@ boostBtn.addEventListener('touchend', () => { touchInput.boost = false; boostBtn
 boostBtn.addEventListener('touchcancel', () => { touchInput.boost = false; boostBtn.classList.remove('on'); });
 
 // ---------------- Relaxing soundscape (all synthesized, stereo) ----------------
-let AC = null, master = null, chimeSend = null, soundOn = true;
+let AC = null, master = null, synthBus = null, chimeSend = null, soundOn = true;
 const soundBtn = document.getElementById('soundBtn');
 function makePan(v) {
   if (AC.createStereoPanner) { const p = AC.createStereoPanner(); p.pan.value = v; return p; }
@@ -1893,6 +2011,11 @@ function initAudio() {
     master = AC.createGain();
     master.gain.value = 1;
     master.connect(AC.destination);
+
+    // the synthesized score lives on its own bus, so Te Amo can fade it out
+    synthBus = AC.createGain();
+    synthBus.gain.value = 1;
+    synthBus.connect(master);
 
     // --- soft wind: filtered brown-ish noise with a slow breathing LFO ---
     const buf = AC.createBuffer(1, AC.sampleRate * 3, AC.sampleRate);
@@ -1927,14 +2050,14 @@ function initAudio() {
     delayB.connect(fbB); fbB.connect(delayA);
     delayA.connect(panA); panA.connect(echoOut);
     delayB.connect(panB); panB.connect(echoOut);
-    echoOut.connect(master);
+    echoOut.connect(synthBus);
     chimeSend = delayA;
 
     // --- slow ambient pad: drifting chords through a breathing lowpass ---
     const padLP = AC.createBiquadFilter();
     padLP.type = 'lowpass'; padLP.frequency.value = 720; padLP.Q.value = 0.4;
     const padGain = AC.createGain(); padGain.gain.value = 0.14;
-    padLP.connect(padGain); padGain.connect(master);
+    padLP.connect(padGain); padGain.connect(synthBus);
     const padLfo = AC.createOscillator(), padLfoG = AC.createGain();
     padLfo.frequency.value = 0.05; padLfoG.gain.value = 190;
     padLfo.connect(padLfoG); padLfoG.connect(padLP.frequency);
@@ -1947,7 +2070,7 @@ function initAudio() {
     const droneGain = AC.createGain(); droneGain.gain.value = 0;
     const droneLP = AC.createBiquadFilter();
     droneLP.type = 'lowpass'; droneLP.frequency.value = 220;
-    droneLP.connect(droneGain); droneGain.connect(master);
+    droneLP.connect(droneGain); droneGain.connect(synthBus);
     [[55, -5, 'sine', 1], [55, 5, 'sine', .8], [110, 0, 'triangle', .25]].forEach(([f, det, type, gv]) => {
       const o = AC.createOscillator();
       o.type = type; o.frequency.value = f; o.detune.value = det;
@@ -1971,7 +2094,7 @@ function initAudio() {
       g.gain.linearRampToValueAtTime(vel, when + 0.025);
       g.gain.exponentialRampToValueAtTime(0.0001, when + 3.2);
       const p = makePan(pan);
-      o.connect(lp); lp.connect(g); g.connect(p); p.connect(master);
+      o.connect(lp); lp.connect(g); g.connect(p); p.connect(synthBus);
       g.connect(chimeSend);
       o.start(when); o.stop(when + 3.4);
     }
@@ -2054,7 +2177,7 @@ function initAudio() {
       g.gain.linearRampToValueAtTime(night ? 0.04 : 0.055, now + 0.15);
       g.gain.exponentialRampToValueAtTime(0.0001, now + 3.5);
       const p = makePan((Math.random() - .5) * 1.2);
-      o.connect(g); g.connect(p); p.connect(master);
+      o.connect(g); g.connect(p); p.connect(synthBus);
       g.connect(chimeSend);
       o.start(now); o.stop(now + 3.8);
       setTimeout(chime, (night ? 9000 : 4500) + Math.random() * 8000);
@@ -2068,6 +2191,100 @@ function toggleSound() {
   soundBtn.textContent = soundOn ? '🔊' : '🔇';
 }
 soundBtn.onclick = toggleSound;
+
+// ---------------- Te Amo (Siggerr) — a dreamy record floating through the sky ----------------
+// Drop the track next to this file as sky-flyer/te-amo.mp3. Hitting 💜 fades the
+// synthesized score away and floats the song in — dry voice drifting slowly between
+// the ears, plus a darkened ping-pong echo kept gentle so the words stay up front.
+// Only the sky's owner (solo flyer, or the host who shared the room) holds the
+// key: friends can play/pause ONLY after the owner unlocks the jukebox 🔒→🔓.
+const teAmoBtn = document.getElementById('teAmoBtn');
+const teAmoLockBtn = document.getElementById('teAmoLockBtn');
+let teAmoOn = false, teAmoEl = null, teAmoBus = null;
+let amOwner = true, teAmoAllowed = false, teAmoPending = null;
+function teAmoMissing() {
+  teAmoOn = false;
+  teAmoBtn.classList.remove('on');
+  showToast('🎵 Put te-amo.mp3 next to index.html');
+  if (AC && synthBus) synthBus.gain.setTargetAtTime(1, AC.currentTime, 0.6);
+  if (teAmoBus) teAmoBus.gain.setTargetAtTime(0, AC.currentTime, 0.3);
+}
+function buildTeAmo() {
+  if (teAmoEl) return;
+  teAmoEl = new Audio('te-amo.mp3');
+  teAmoEl.loop = true;
+  teAmoEl.onerror = teAmoMissing;
+  const src = AC.createMediaElementSource(teAmoEl);
+  teAmoBus = AC.createGain();
+  teAmoBus.gain.value = 0;
+  teAmoBus.connect(master);
+
+  // dry voice, drifting slowly side to side — the "you're inside the space" feel
+  const dry = AC.createGain(); dry.gain.value = 0.85;
+  const drift = makePan(0);
+  src.connect(dry); dry.connect(drift); drift.connect(teAmoBus);
+  if (drift.pan) {
+    const lfo = AC.createOscillator(), lg = AC.createGain();
+    lfo.frequency.value = 0.07; lg.gain.value = 0.22;
+    lfo.connect(lg); lg.connect(drift.pan); lfo.start();
+  }
+
+  // ping-pong echo, darkened so it sits behind the song instead of over it
+  const send = AC.createGain(); send.gain.value = 0.55;
+  const darker = AC.createBiquadFilter();
+  darker.type = 'lowpass'; darker.frequency.value = 2200;
+  const dL = AC.createDelay(1.5), dR = AC.createDelay(1.5);
+  dL.delayTime.value = 0.31; dR.delayTime.value = 0.46;
+  const fL = AC.createGain(), fR = AC.createGain();
+  fL.gain.value = 0.28; fR.gain.value = 0.28;
+  const pL = makePan(-0.7), pR = makePan(0.7);
+  const wet = AC.createGain(); wet.gain.value = 0.3;
+  src.connect(send); send.connect(darker); darker.connect(dL);
+  dL.connect(fL); fL.connect(dR);
+  dR.connect(fR); fR.connect(dL);
+  dL.connect(pL); pL.connect(wet);
+  dR.connect(pR); pR.connect(wet);
+  wet.connect(teAmoBus);
+}
+function setTeAmo(on, fromNet) {
+  if (!AC) { teAmoPending = on; return; }   // audio not born yet — remember for startFlight
+  buildTeAmo();
+  if (on === teAmoOn) return;
+  teAmoOn = on;
+  teAmoBtn.classList.toggle('on', teAmoOn);
+  const now = AC.currentTime;
+  if (teAmoOn) {
+    const p = teAmoEl.play();
+    if (p && p.catch) p.catch(teAmoMissing);
+    synthBus.gain.setTargetAtTime(0, now, 0.8);     // the score bows out…
+    teAmoBus.gain.setTargetAtTime(0.9, now, 0.8);   // …and the song drifts in
+    showToast('💜 Te Amo — Siggerr');
+  } else {
+    teAmoBus.gain.setTargetAtTime(0, now, 0.6);
+    synthBus.gain.setTargetAtTime(1, now, 0.8);
+    setTimeout(() => { if (!teAmoOn && teAmoEl) teAmoEl.pause(); }, 2200);
+  }
+  if (!fromNet) netSendTeAmo();
+}
+teAmoBtn.onclick = () => {
+  if (!amOwner && !teAmoAllowed) {
+    showToast('🔒 The sky owner hasn\'t opened the jukebox');
+    return;
+  }
+  initAudio();
+  if (!AC) return;
+  setTeAmo(!teAmoOn, false);
+};
+
+// the owner's key: while locked, only the owner's 💜 works; unlock and the
+// whole room may play or pause the song
+teAmoLockBtn.onclick = () => {
+  if (!amOwner) return;
+  teAmoAllowed = !teAmoAllowed;
+  teAmoLockBtn.textContent = teAmoAllowed ? '🔓' : '🔒';
+  showToast(teAmoAllowed ? '🔓 Friends can now play the song' : '🔒 Song controls are yours alone');
+  netSendTeAmoLock();
+};
 
 // ---------------- UI ----------------
 const overlay = document.getElementById('overlay');
@@ -2141,6 +2358,10 @@ function startFlight() {
   initAudio();
   soundBtn.style.display = 'block';
   restBtn.style.display = 'block';
+  teAmoBtn.style.display = 'block';
+  battBtn.style.display = 'block';
+  if (amOwner) teAmoLockBtn.style.display = 'block';
+  if (teAmoPending !== null) { const p = teAmoPending; teAmoPending = null; setTeAmo(p, true); }
   if (isTouch) {
     boostBtn.style.display = 'flex';
     if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
@@ -2555,6 +2776,17 @@ function netPublishState() {
 function netSendWish(n) {
   if (client && joined) client.publish(roomTopic() + '/p/' + myId, JSON.stringify({ t: 'wish', n }));
 }
+// retained, so late joiners hear the song (and its lock) exactly as the room left it
+function netSendTeAmo() {
+  if (client && joined) {
+    client.publish(roomTopic() + '/teamo', JSON.stringify({ on: teAmoOn ? 1 : 0, by: myId }), { retain: true });
+  }
+}
+function netSendTeAmoLock() {
+  if (client && joined) {
+    client.publish(roomTopic() + '/teamo-lock', JSON.stringify({ allow: teAmoAllowed ? 1 : 0, by: myId }), { retain: true });
+  }
+}
 
 function onNetMessage(topic, payload) {
   let d;
@@ -2562,6 +2794,20 @@ function onNetMessage(topic, payload) {
   const sub = topic.slice(roomTopic().length + 1);
   if (sub === 'scene') {
     if (d.by !== myId && SCENES[d.i]) setScene(d.i, true);
+    return;
+  }
+  if (sub === 'teamo-lock') {
+    if (d.by !== myId && !amOwner) {
+      const was = teAmoAllowed;
+      teAmoAllowed = !!d.allow;
+      if (flying && was !== teAmoAllowed) {
+        showToast(teAmoAllowed ? '💜 The sky owner opened the jukebox' : '🔒 The sky owner locked the jukebox');
+      }
+    }
+    return;
+  }
+  if (sub === 'teamo') {
+    if (d.by !== myId) setTeAmo(!!d.on, true);
     return;
   }
   if (!sub.startsWith('p/')) return;
@@ -2696,6 +2942,8 @@ function joinFlight(code) {
   if (client) return;
   if (!code || code.length < 4) { mpStatus.textContent = 'Type the 4-letter room code first'; return; }
   spawnNearOthers = true;
+  amOwner = false;                     // guests don't hold the jukebox key
+  teAmoLockBtn.style.display = 'none';
   connectRoom(code.toUpperCase(), false);
 }
 
@@ -3025,7 +3273,28 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
+// ---- battery saver: identical graphics, ~half the frames ----
+// Nothing visual changes — resolution, shadows and antialiasing stay full.
+// The loop simply sits out vsyncs until ~31ms have passed, so the GPU works
+// at ~30fps instead of 60+, which is where most of the heat comes from.
+const battBtn = document.getElementById('battBtn');
+let batterySave = localStorage.getItem('skydrift-battsave') === '1';
+let battNextMs = 0;
+function refreshBattBtn() { battBtn.classList.toggle('on', batterySave); }
+battBtn.onclick = () => {
+  batterySave = !batterySave;
+  localStorage.setItem('skydrift-battsave', batterySave ? '1' : '0');
+  refreshBattBtn();
+  showToast(batterySave ? '🔋 Battery saver — cooler, same graphics' : '⚡ Full frame rate');
+};
+refreshBattBtn();
+
 renderer.setAnimationLoop(() => {
+  if (batterySave) {
+    const nowMs = performance.now();
+    if (nowMs < battNextMs) return;         // sit this vsync out — no physics, no draw
+    battNextMs = nowMs + 31;                // ≈30fps; dt below stretches to match
+  }
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
 
@@ -3206,9 +3475,32 @@ renderer.setAnimationLoop(() => {
     if (showerT > 0) showerT -= dt;
     // lanterns and the campfire breathe
     for (const s of siteFlames) {
-      s.mat.opacity = s.base + s.amp * (0.5 + 0.5 * Math.sin(t * 2.6 + s.phase) + 0.22 * Math.sin(t * 7.3 + s.phase * 2));
-      if (s.flame) s.flame.scale.setScalar(0.88 + 0.15 * Math.sin(t * 6.1) + 0.06 * Math.sin(t * 11.7));
+      // calm flames breathe like a hearth; the rest flicker like torches
+      const w1 = s.calm ? 1.1 : 2.6, w2 = s.calm ? 3.4 : 7.3;
+      s.mat.opacity = s.base + s.amp * (0.5 + 0.5 * Math.sin(t * w1 + s.phase) + 0.22 * Math.sin(t * w2 + s.phase * 2));
+      if (s.flame) s.flame.scale.setScalar(s.calm
+        ? 0.93 + 0.07 * Math.sin(t * 2.4) + 0.03 * Math.sin(t * 5.1)
+        : 0.88 + 0.15 * Math.sin(t * 6.1) + 0.06 * Math.sin(t * 11.7));
     }
+  }
+
+  // the overlook hums quietly: fairy lights in slow waves, a breathing pool of
+  // warmth, embers wandering upward
+  for (let i = 0; i < fairyMats.length; i++) {
+    fairyMats[i].opacity = 0.5 + 0.28 * Math.sin(t * 0.7 + i * 2.1);
+  }
+  if (poolMat) poolMat.opacity = 0.12 + 0.05 * Math.sin(t * 0.32);
+  if (emberPts) {
+    const p = emberPts.geometry.attributes.position;
+    for (let i = 0; i < emberVel.length; i++) {
+      let y = p.getY(i) + emberVel[i] * dt;
+      if (y > emberTop[i]) y = 0;
+      p.setX(i, emberHome[i][0] + Math.sin(t * 0.8 + i * 1.3) * 0.14 * y);
+      p.setZ(i, emberHome[i][1] + Math.cos(t * 0.6 + i * 2.1) * 0.14 * y);
+      p.setY(i, y);
+    }
+    p.needsUpdate = true;
+    emberMat.opacity = 0.5 + 0.2 * Math.sin(t * 1.1);
   }
 
   // roads + traffic (city scene)
