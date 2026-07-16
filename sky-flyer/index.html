@@ -83,6 +83,27 @@
     background: rgba(8, 14, 34, .5); color: #fff; font-size: 1.1rem; padding: 8px 12px; border-radius: 999px;
   }
   #teAmoBtn.on { background: rgba(255, 140, 200, .85); }
+  #pwModal {
+    position: fixed; inset: 0; z-index: 20; display: none;
+    align-items: center; justify-content: center; background: rgba(4, 8, 22, .55);
+  }
+  #pwModal .box {
+    display: flex; flex-direction: column; gap: 12px; padding: 22px 24px;
+    background: rgba(10, 16, 38, .92); border: 1px solid rgba(255,255,255,.18);
+    border-radius: 18px; color: #fff; width: min(84vw, 320px);
+  }
+  #pwModal .q { font-size: 1.05rem; text-align: center; }
+  #pwModal input {
+    font-family: inherit; font-size: 1rem; color: #fff; outline: none; text-align: center;
+    background: rgba(8,14,34,.8); border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 9px 14px;
+  }
+  #pwModal .row { display: flex; gap: 8px; justify-content: center; }
+  #pwModal button {
+    border: none; cursor: pointer; font-family: inherit; font-size: .95rem;
+    border-radius: 999px; padding: 8px 16px;
+  }
+  #pwGo { background: rgba(255, 140, 200, .9); color: #1d2430; font-weight: 700; }
+  #pwNo { background: rgba(255,255,255,.14); color: #fff; }
   #battBtn {
     position: fixed; left: calc(14px + env(safe-area-inset-left)); top: calc(164px + env(safe-area-inset-top));
     z-index: 6; display: none; border: 1px solid rgba(255,255,255,.15); cursor: pointer;
@@ -211,6 +232,13 @@ addEventListener('error', () => {
 <button id="soundBtn" title="Sound on/off">🔊</button>
 <button id="restBtn" title="Rest & watch">🧘</button>
 <button id="teAmoBtn" title="Te Amo — Siggerr">💜</button>
+<div id="pwModal">
+  <div class="box">
+    <div class="q">🔑 Whisper the magic word</div>
+    <input id="pwInput" maxlength="24" autocomplete="off" placeholder="password">
+    <div class="row"><button id="pwGo">Open the jukebox</button><button id="pwNo">Cancel</button></div>
+  </div>
+</div>
 <button id="battBtn" title="Battery saver — same graphics, fewer frames">🔋</button>
 <div id="chat">
   <div id="chatLog"></div>
@@ -2260,14 +2288,31 @@ function setTeAmo(on, fromNet) {
   }
   if (!fromNet) netSendTeAmo();
 }
+// an in-game password box — browsers silence prompt() in fullscreen, so the
+// game asks with its own little dialog instead
+const pwModal = document.getElementById('pwModal');
+const pwInput = document.getElementById('pwInput');
+function closePw() { pwModal.style.display = 'none'; pwInput.blur(); }
+document.getElementById('pwGo').onclick = () => {
+  const ok = pwInput.value.trim().toLowerCase() === TEAMO_PW;
+  closePw();
+  if (!ok) { showToast('🚫 Not the magic word'); return; }
+  pwOk = true;
+  initAudio();
+  if (AC) setTeAmo(!teAmoOn, false);
+};
+document.getElementById('pwNo').onclick = closePw;
+pwModal.onclick = e => { if (e.target === pwModal) closePw(); };
+pwInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('pwGo').click();
+  if (e.key === 'Escape') closePw();
+});
 teAmoBtn.onclick = () => {
   if (!pwOk) {
-    const guess = (prompt('🔑 Jukebox password?') || '').trim().toLowerCase();
-    if (guess !== TEAMO_PW) {
-      if (guess) showToast('🚫 Not the magic word');
-      return;
-    }
-    pwOk = true;
+    pwModal.style.display = 'flex';
+    pwInput.value = '';
+    setTimeout(() => pwInput.focus(), 60);
+    return;
   }
   initAudio();
   if (!AC) return;
