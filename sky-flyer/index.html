@@ -83,13 +83,8 @@
     background: rgba(8, 14, 34, .5); color: #fff; font-size: 1.1rem; padding: 8px 12px; border-radius: 999px;
   }
   #teAmoBtn.on { background: rgba(255, 140, 200, .85); }
-  #teAmoLockBtn {
-    position: fixed; left: calc(14px + env(safe-area-inset-left)); top: calc(164px + env(safe-area-inset-top));
-    z-index: 6; display: none; border: 1px solid rgba(255,255,255,.15); cursor: pointer;
-    background: rgba(8, 14, 34, .5); color: #fff; font-size: 1.1rem; padding: 8px 12px; border-radius: 999px;
-  }
   #battBtn {
-    position: fixed; left: calc(14px + env(safe-area-inset-left)); top: calc(214px + env(safe-area-inset-top));
+    position: fixed; left: calc(14px + env(safe-area-inset-left)); top: calc(164px + env(safe-area-inset-top));
     z-index: 6; display: none; border: 1px solid rgba(255,255,255,.15); cursor: pointer;
     background: rgba(8, 14, 34, .5); color: #fff; font-size: 1.1rem; padding: 8px 12px; border-radius: 999px;
   }
@@ -158,7 +153,7 @@
       text-align: center; font-size: .74rem; background: rgba(8, 14, 34, .3); padding: 6px 12px; }
     #scenes { display: none; }
     #stats { font-size: .72rem; padding: 4px 10px; background: rgba(8, 14, 34, .3); line-height: 1.45; }
-    #soundBtn, #restBtn, #teAmoBtn, #teAmoLockBtn, #battBtn { background: rgba(8, 14, 34, .32); border-color: rgba(255,255,255,.12);
+    #soundBtn, #restBtn, #teAmoBtn, #battBtn { background: rgba(8, 14, 34, .32); border-color: rgba(255,255,255,.12);
       font-size: 1rem; padding: 7px 10px; }
     #teAmoBtn.on { background: rgba(255, 140, 200, .85); }
     #boostBtn { width: 64px; height: 64px; font-size: 1.5rem;
@@ -216,7 +211,6 @@ addEventListener('error', () => {
 <button id="soundBtn" title="Sound on/off">🔊</button>
 <button id="restBtn" title="Rest & watch">🧘</button>
 <button id="teAmoBtn" title="Te Amo — Siggerr">💜</button>
-<button id="teAmoLockBtn" title="Jukebox lock — the password opens it">🔒</button>
 <button id="battBtn" title="Battery saver — same graphics, fewer frames">🔋</button>
 <div id="chat">
   <div id="chatLog"></div>
@@ -2196,13 +2190,11 @@ soundBtn.onclick = toggleSound;
 // Drop the track next to this file as sky-flyer/te-amo.mp3. Hitting 💜 fades the
 // synthesized score away and floats the song in — dry voice drifting slowly between
 // the ears, plus a darkened ping-pong echo kept gentle so the words stay up front.
-// The jukebox opens with a password, not a rank: anyone who knows the magic
-// word can unlock 🔒→🔓 for the whole room; while locked, 💜 does nothing.
+// The jukebox never plays on its own: 💜 asks for the magic word, and whoever
+// says it starts or stops the song for everyone flying right now.
 const TEAMO_PW = 'dream';
 const teAmoBtn = document.getElementById('teAmoBtn');
-const teAmoLockBtn = document.getElementById('teAmoLockBtn');
-let teAmoOn = false, teAmoEl = null, teAmoBus = null;
-let teAmoAllowed = false, teAmoPending = null;
+let teAmoOn = false, teAmoEl = null, teAmoBus = null, teAmoPending = null;
 let pwOk = localStorage.getItem('skydrift-jukebox-key') === '1';
 function teAmoMissing() {
   teAmoOn = false;
@@ -2269,18 +2261,6 @@ function setTeAmo(on, fromNet) {
   if (!fromNet) netSendTeAmo();
 }
 teAmoBtn.onclick = () => {
-  if (!teAmoAllowed) {
-    showToast('🔒 The jukebox is locked — the 🔑 button knows the word');
-    return;
-  }
-  initAudio();
-  if (!AC) return;
-  setTeAmo(!teAmoOn, false);
-};
-
-// the magic word is the key: say it once and this browser may lock or unlock
-// the jukebox for the whole room
-teAmoLockBtn.onclick = () => {
   if (!pwOk) {
     const guess = (prompt('🔑 Jukebox password?') || '').trim().toLowerCase();
     if (guess !== TEAMO_PW) {
@@ -2290,10 +2270,9 @@ teAmoLockBtn.onclick = () => {
     pwOk = true;
     localStorage.setItem('skydrift-jukebox-key', '1');
   }
-  teAmoAllowed = !teAmoAllowed;
-  teAmoLockBtn.textContent = teAmoAllowed ? '🔓' : '🔒';
-  showToast(teAmoAllowed ? '🔓 Jukebox open — anyone can play' : '🔒 Jukebox locked');
-  netSendTeAmoLock();
+  initAudio();
+  if (!AC) return;
+  setTeAmo(!teAmoOn, false);
 };
 
 // ---------------- UI ----------------
@@ -2370,7 +2349,6 @@ function startFlight() {
   restBtn.style.display = 'block';
   teAmoBtn.style.display = 'block';
   battBtn.style.display = 'block';
-  teAmoLockBtn.style.display = 'block';
   if (teAmoPending !== null) { const p = teAmoPending; teAmoPending = null; setTeAmo(p, true); }
   if (isTouch) {
     boostBtn.style.display = 'flex';
@@ -2786,19 +2764,15 @@ function netPublishState() {
 function netSendWish(n) {
   if (client && joined) client.publish(roomTopic() + '/p/' + myId, JSON.stringify({ t: 'wish', n }));
 }
-// retained, so late joiners hear the song (and its lock) exactly as the room left it
+// live only, never retained — the song reaches whoever is flying right now,
+// and joining a room never auto-starts music
 function netSendTeAmo() {
   if (client && joined) {
-    client.publish(roomTopic() + '/teamo', JSON.stringify({ on: teAmoOn ? 1 : 0, by: myId }), { retain: true });
-  }
-}
-function netSendTeAmoLock() {
-  if (client && joined) {
-    client.publish(roomTopic() + '/teamo-lock', JSON.stringify({ allow: teAmoAllowed ? 1 : 0, by: myId }), { retain: true });
+    client.publish(roomTopic() + '/teamo', JSON.stringify({ on: teAmoOn ? 1 : 0, by: myId }));
   }
 }
 
-function onNetMessage(topic, payload) {
+function onNetMessage(topic, payload, packet) {
   let d;
   try { d = JSON.parse(payload.toString()); } catch (e) { return; }
   const sub = topic.slice(roomTopic().length + 1);
@@ -2806,19 +2780,9 @@ function onNetMessage(topic, payload) {
     if (d.by !== myId && SCENES[d.i]) setScene(d.i, true);
     return;
   }
-  if (sub === 'teamo-lock') {
-    if (d.by !== myId) {
-      const was = teAmoAllowed;
-      teAmoAllowed = !!d.allow;
-      teAmoLockBtn.textContent = teAmoAllowed ? '🔓' : '🔒';
-      if (flying && was !== teAmoAllowed) {
-        showToast(teAmoAllowed ? '💜 Someone opened the jukebox' : '🔒 Someone locked the jukebox');
-      }
-    }
-    return;
-  }
   if (sub === 'teamo') {
-    if (d.by !== myId) setTeAmo(!!d.on, true);
+    // ignore retained leftovers from earlier sessions — music starts only live
+    if (d.by !== myId && !(packet && packet.retain)) setTeAmo(!!d.on, true);
     return;
   }
   if (!sub.startsWith('p/')) return;
