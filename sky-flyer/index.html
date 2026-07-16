@@ -2195,7 +2195,7 @@ soundBtn.onclick = toggleSound;
 const TEAMO_PW = 'dream';
 const teAmoBtn = document.getElementById('teAmoBtn');
 let teAmoOn = false, teAmoEl = null, teAmoBus = null, teAmoPending = null;
-let pwOk = localStorage.getItem('skydrift-jukebox-key') === '1';
+let pwOk = false;   // asked once per visit — a reload asks again
 function teAmoMissing() {
   teAmoOn = false;
   teAmoBtn.classList.remove('on');
@@ -2268,7 +2268,6 @@ teAmoBtn.onclick = () => {
       return;
     }
     pwOk = true;
-    localStorage.setItem('skydrift-jukebox-key', '1');
   }
   initAudio();
   if (!AC) return;
